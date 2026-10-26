@@ -1,0 +1,36 @@
+# Local development override.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# The source tree is bind-mounted over /app, so vendor/ must exist on the host
+# (run `composer install` once) or the container will not find the autoloader.
+# The SQLite database and logs stay in named volumes.
+
+services:
+  billas-app:
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      AUTO_MIGRATE: "1"
+      AUTO_SEED: "1"
+      SEED_DEMO: "1"
+      MIKROTIK_FAKE: "true"
+      LOG_LEVEL: debug
+    volumes:
+      - .:/app
+      - billas-data:/data
+      - billas-logs:/app/logs
+    ports:
+      - "${BILLAS_HTTP_PORT:-8080}:8080"
+
+  billas-worker:
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      AUTO_MIGRATE: "1"
+      MIKROTIK_FAKE: "true"
+      RETRY_INTERVAL: "10"
+      LOG_LEVEL: debug
+    volumes:
+      - .:/app
+      - billas-data:/data
+      - billas-logs:/app/logs

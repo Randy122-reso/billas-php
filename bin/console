@@ -1,0 +1,245 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Billas\Database\Migrator;
+use Billas\Database\Seeder;
+use Billas\Domain\BackupService;
+use Billas\Domain\CronService;
+use Billas\Domain\CustomerPaymentAccountService;
+use Billas\Kernel;
+
+/**
+ * Billas v4 operator CLI.
+ *
+ * Usage:
+ *   php bin/console migrate [--seed]
+ *   php bin/console seed
+ *   php bin/console backup
+ *   php bin/console cron:run [--force] [--tasks=vouchers,order_expire]
+ *   php bin/console qris:create <customerId> [gateway]
+ *   php bin/console qris:create --all [gateway]
+ */
+
+$root = dirname(__DIR__);
+require $root . '/vendor/autoload.php';
+
+/**
+ * @param array<string,mixed> $data
+ */
+function billas_json(array $data): void
+{
+    echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . PHP_EOL;
+}
+
+function billas_usage(): void
+{
+    echo <<<TXT
+Billas v4 console
+
+  migrate [--seed]                 Apply schema + pending migrations
+  seed                             Seed admin/settings/default demo data
+  backup                           Copy SQLite DB to var/backups (WAL-safe)
+  cron:run [--force] [tasks...]    Run cron tasks once (respects job_state)
+  cron:list                        Show configured cron tasks
+  qris:create <id> [gateway]       Create/reuse a customer's unique QRIS
+  qris:create --all [gateway]      Backfill unique QRIS for active PPPoE customers
+  status                           Show DB, migration, queue and job status
+  help                             This help
+
+Examples:
+  php bin/console migrate --seed
+  php bin/console cron:run --force --tasks=vouchers,order_expire
+  php bin/console qris:create 12 midtrans
+
+TXT;
+}
+
+/** @return array{command:string,options:array<string,string|true>,positional:list<string>} */
+function billas_parse_args(array $argv): array
+{
+    $args = array_slice($argv, 1);
+    $command = 'help';
+    if ($args !== [] && !str_starts_with((string) $args[0], '-')) {
+        $command = (string) array_shift($args);
+    }
+
+    $options = [];
+    $positional = [];
+    foreach ($args as $arg) {
+        if (str_starts_with($arg, '--')) {
+            $body = substr($arg, 2);
+            if ($body === '') {
+                continue;
+            }
+            $eq = strpos($body, '=');
+            if ($eq === false) {
+                $options[$body] = true;
+            } else {
+                $options[substr($body, 0, $eq)] = substr($body, $eq + 1);
+            }
+        } else {
+            $positional[] = $arg;
+        }
+    }
+
+    return ['command' => $command, 'options' => $options, 'positional' => $positional];
+}
+
+$parsed = billas_parse_args($argv);
+$command = $parsed['command'];
+$options = $parsed['options'];
+$positional = $parsed['positional'];
+
+if (in_array($command, ['help', '-h', '--help'], true)) {
+    billas_usage();
+    exit(0);
+}
+
+try {
+    $services = Kernel::services($root);
+} catch (Throwable $e) {
+    fwrite(STDERR, 'Billas gagal memuat konfigurasi: ' . $e->getMessage() . PHP_EOL);
+    fwrite(STDERR, 'Pastikan .env sudah dibuat dari .env.example dan secret minimal 16 karakter.' . PHP_EOL);
+    exit(1);
+}
+
+/** @var Psr\Container\ContainerInterface $container */
+$container = $services['container'];
+/** @var PDO $db */
+$db = $services['db'];
+
+try {
+    switch ($command) {
+        case 'migrate':
+            $applied = $container->get(Migrator::class)->migrate();
+            $result = ['status' => 'ok', 'applied' => $applied];
+            if (isset($options['seed']) || isset($options['s'])) {
+                $result['seed'] = $container->get(Seeder::class)->seed();
+            }
+            billas_json($result);
+            break;
+
+        case 'seed':
+            billas_json(['status' => 'ok', 'seed' => $container->get(Seeder::class)->seed()]);
+            break;
+
+        case 'backup':
+            billas_json(['status' => 'ok', 'backup' => $container->get(BackupService::class)->run()]);
+            break;
+
+        case 'cron:list':
+            billas_json([
+                'status' => 'ok',
+                'tasks' => CronService::TASKS,
+                'job_state' => $db->query('SELECT task, last_run_at, updated_at, last_result FROM job_state ORDER BY task')->fetchAll(),
+            ]);
+            break;
+
+        case 'cron:run':
+            $tasks = $positional;
+            if (isset($options['tasks']) && is_string($options['tasks'])) {
+                $tasks = array_merge($tasks, array_filter(array_map('trim', explode(',', $options['tasks']))));
+            }
+            if ($tasks === [] && isset($options['task']) && is_string($options['task'])) {
+                $tasks[] = $options['task'];
+            }
+            $force = isset($options['force']) || isset($options['f']);
+            billas_json([
+                'status' => 'ok',
+                'cron' => $container->get(CronService::class)->tick(array_values(array_unique($tasks)), $force),
+            ]);
+            break;
+
+        case 'qris:create':
+            /** @var CustomerPaymentAccountService $accounts */
+            $accounts = $container->get(CustomerPaymentAccountService::class);
+            $gateway = null;
+            if (isset($positional[1]) && $positional[1] !== '') {
+                $gateway = $positional[1];
+            } elseif (isset($options['gateway']) && is_string($options['gateway'])) {
+                $gateway = $options['gateway'];
+            }
+
+            if (isset($options['all'])) {
+                $rows = $db->query(
+                    "SELECT c.id, c.code, c.name
+                     FROM customers c JOIN packages p ON p.id = c.package_id
+                     WHERE c.status IN ('active','isolir') AND p.type = 'pppoe'
+                     ORDER BY c.id"
+                )->fetchAll();
+                $created = [];
+                $errors = [];
+                foreach ($rows as $customer) {
+                    try {
+                        $account = $accounts->getOrCreateQris((int) $customer['id'], $gateway);
+                        $created[] = [
+                            'customer_id' => (int) $customer['id'],
+                            'customer_code' => $customer['code'],
+                            'account_id' => (int) $account['id'],
+                            'gateway' => $account['gateway'],
+                            'external_ref' => $account['external_ref'],
+                        ];
+                    } catch (Throwable $e) {
+                        $errors[] = [
+                            'customer_id' => (int) $customer['id'],
+                            'customer_code' => $customer['code'],
+                            'error' => $e->getMessage(),
+                        ];
+                    }
+                }
+                billas_json([
+                    'status' => $errors === [] ? 'ok' : 'partial',
+                    'created' => $created,
+                    'errors' => $errors,
+                ]);
+                break;
+            }
+
+            $customerId = isset($positional[0]) ? (int) $positional[0] : (int) ($options['customer'] ?? 0);
+            if ($customerId <= 0) {
+                fwrite(STDERR, 'qris:create membutuhkan customer ID atau --all.' . PHP_EOL);
+                exit(2);
+            }
+            $account = $accounts->getOrCreateQris($customerId, $gateway);
+            billas_json(['status' => 'ok', 'account' => [
+                'id' => (int) $account['id'],
+                'customer_id' => (int) $account['customer_id'],
+                'gateway' => $account['gateway'],
+                'external_ref' => $account['external_ref'],
+                'qr_string' => $account['qr_string'],
+            ]]);
+            break;
+
+        case 'status':
+            $migrations = $db->query('SELECT migration, applied_at FROM schema_migrations ORDER BY migration')->fetchAll();
+            $counts = [];
+            foreach (['customers', 'orders', 'vouchers', 'invoices', 'captive_portal_sessions', 'retry_queue'] as $table) {
+                $counts[$table] = (int) $db->query('SELECT COUNT(*) FROM ' . $table)->fetchColumn();
+            }
+            $retry = $db->query('SELECT status, COUNT(*) AS total FROM retry_queue GROUP BY status')->fetchAll();
+            $jobs = $db->query('SELECT task, last_run_at, updated_at FROM job_state ORDER BY task')->fetchAll();
+            billas_json([
+                'status' => 'ok',
+                'app_env' => $services['env']->string('APP_ENV'),
+                'db_path' => $services['env']->string('DB_PATH'),
+                'migrations' => $migrations,
+                'counts' => $counts,
+                'retry_queue' => $retry,
+                'job_state' => $jobs,
+            ]);
+            break;
+
+        default:
+            fwrite(STDERR, 'Perintah tidak dikenal: ' . $command . PHP_EOL . PHP_EOL);
+            billas_usage();
+            exit(2);
+    }
+} catch (Throwable $e) {
+    fwrite(STDERR, 'Gagal: ' . $e->getMessage() . PHP_EOL);
+    if ($services['env']->bool('APP_DEBUG')) {
+        fwrite(STDERR, $e->getFile() . ':' . $e->getLine() . PHP_EOL . $e->getTraceAsString() . PHP_EOL);
+    }
+    exit(1);
+}

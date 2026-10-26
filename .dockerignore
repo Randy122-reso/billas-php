@@ -1,0 +1,23 @@
+# Build context excludes. Keep the image small and never bake secrets/data in.
+.git
+.gitignore
+.github
+vendor
+var
+logs
+node_modules
+tests
+phpunit.xml
+phpstan.neon
+docker-compose*.yml
+.env
+.env.*
+!.env.example
+*.log
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+.DS_Store
+Thumbs.db
+tmp

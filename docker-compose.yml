@@ -1,0 +1,80 @@
+name: billas
+
+services:
+  billas-app:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    image: billas-php-app:4.0.0
+    container_name: billas-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_PATH: /data/billas.db
+      LOG_DIR: /app/logs
+      APP_LISTEN_PORT: "8080"
+    ports:
+      - "${BILLAS_HTTP_PORT:-8080}:8080"
+    volumes:
+      - billas-data:/data
+      - billas-logs:/app/logs
+    networks:
+      - billas-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  billas-worker:
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
+    image: billas-php-worker:4.0.0
+    container_name: billas-worker
+    restart: unless-stopped
+    command: ["php", "/app/bin/worker.php"]
+    env_file:
+      - .env
+    environment:
+      DB_PATH: /data/billas.db
+      LOG_DIR: /app/logs
+      RETRY_INTERVAL: "60"
+    volumes:
+      - billas-data:/data
+      - billas-logs:/app/logs
+    networks:
+      - billas-net
+    depends_on:
+      billas-app:
+        condition: service_healthy
+
+  billas-cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: billas-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN:-}"
+    networks:
+      - billas-net
+    depends_on:
+      billas-app:
+        condition: service_started
+    # The tunnel is optional for local/dev deployments. Start everything with:
+    #   docker compose --profile tunnel up -d
+    profiles:
+      - tunnel
+
+volumes:
+  billas-data:
+    name: billas-data
+  billas-logs:
+    name: billas-logs
+
+networks:
+  billas-net:
+    name: billas-net
+    driver: bridge

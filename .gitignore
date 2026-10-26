@@ -1,0 +1,29 @@
+# Dependencies
+/vendor/
+
+# Local data and logs (never commit the SQLite database)
+/var/
+/logs/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Test/build artefacts
+/.phpunit.cache/
+/.phpunit.result.cache
+/build/
+/coverage/
+*.log
+
+# OS editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

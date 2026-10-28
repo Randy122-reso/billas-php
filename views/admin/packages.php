@@ -18,7 +18,7 @@
     <?php else: ?>
         <div class="table-wrap">
             <table class="table">
-                <thead><tr><th>Nama</th><th>Tipe</th><th>Harga</th><th>Durasi</th><th>Profil</th><th>Captive</th><th>Status</th><th></th></tr></thead>
+                <thead><tr><th>Nama</th><th>Tipe</th><th>Harga</th><th>Durasi</th><th>User Profile</th><th>Captive</th><th>Status</th><th></th></tr></thead>
                 <tbody>
                 <?php foreach ($packages as $package): ?>
                     <tr>
@@ -75,7 +75,15 @@
             </select>
         </label>
         <label class="field"><span>Hari kalender</span><input type="number" min="0" name="calendar_days" value="<?= e($edit['calendar_days'] ?? '') ?>" placeholder="mis. 30"></label>
-        <label class="field"><span>Profil MikroTik <em>*</em></span><input type="text" name="mikrotik_profile" value="<?= e($edit['mikrotik_profile'] ?? '') ?>" required></label>
+        <label class="field">
+            <span>User Profile (MikroTik) <em>*</em></span>
+            <input type="text" name="mikrotik_profile" value="<?= e($edit['mikrotik_profile'] ?? '') ?>" required placeholder="mis. hsprof1">
+            <small class="muted small">
+                Hotspot: nama di <code>/ip hotspot user profile</code>.
+                PPPoE: nama di <code>/ppp profile</code>.
+                Bukan <code>/ip hotspot profile</code> (Server Profile). Profil harus sudah ada di router agar push voucher/pelanggan tidak gagal.
+            </small>
+        </label>
         <label class="field"><span>Bandwidth download (kbps)</span><input type="number" min="0" name="bandwidth_down" value="<?= e($edit['bandwidth_down'] ?? '') ?>"></label>
         <label class="field"><span>Bandwidth upload (kbps)</span><input type="number" min="0" name="bandwidth_up" value="<?= e($edit['bandwidth_up'] ?? '') ?>"></label>
         <label class="checkbox-field"><input type="checkbox" name="active" value="1" <?= (int) ($edit['active'] ?? 1) === 1 ? 'checked' : '' ?>> <span>Aktif</span></label>

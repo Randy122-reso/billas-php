@@ -147,6 +147,33 @@ $featureLabels = [
         </div>
     </section>
 
+    <?php
+    $simulatorEnabled = billas_feature('webhook_simulator');
+    $simulatorMode = $value('webhook_simulator.mode', 'sign');
+    $simulatorAllow = $checked('webhook_simulator.allow_in_production', false);
+    ?>
+    <section class="card">
+        <div class="card-head">
+            <h2>Webhook Simulator</h2>
+            <span class="badge badge-<?= e($simulatorEnabled ? 'success' : 'muted') ?>"><?= $simulatorEnabled ? 'aktif' : 'nonaktif' ?></span>
+        </div>
+        <div class="content-grid">
+            <dl class="summary-list compact">
+                <div><dt>Feature flag</dt><dd class="mono">FEATURE_WEBHOOK_SIMULATOR=<?= $simulatorEnabled ? 'true' : 'false' ?></dd></div>
+                <div><dt>Mode default</dt><dd><span class="mono"><?= e($simulatorMode) ?></span></dd></div>
+                <div><dt>Production allowed</dt><dd><span class="badge badge-<?= e($simulatorAllow ? 'warning' : 'success') ?>"><?= $simulatorAllow ? 'ya' : 'tidak' ?></span></dd></div>
+            </dl>
+            <div>
+                <div class="notice notice-warning small">
+                    Simulator adalah alat admin-only dan default OFF. Di production, flag ini wajib disertai <span class="mono">WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=true</span>; tanpa itu aplikasi menolak boot. Ubah nilai melalui <span class="mono">.env</span>.
+                </div>
+                <?php if ($simulatorEnabled): ?>
+                    <a class="btn btn-primary btn-sm" href="<?= e(billas_url('/admin/simulator')) ?>">Buka simulator →</a>
+                <?php endif; ?>
+            </div>
+        </div>
+    </section>
+
     <div class="content-grid">
         <section class="card">
             <div class="card-head"><h2>Cron &amp; isolir</h2><span class="badge badge-<?= e($cronSet ? 'success' : 'warning') ?>"><?= $cronSet ? 'CRON_TOKEN terisi' : 'CRON_TOKEN lemah' ?></span></div>

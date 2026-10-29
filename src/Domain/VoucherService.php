@@ -133,7 +133,7 @@ final class VoucherService
     /** @return list<array<string,mixed>> */
     public function listAdmin(string $source = '', string $status = ''): array
     {
-        $sql = 'SELECT v.*, o.merchant_ref, o.amount, p.name AS package_name
+        $sql = 'SELECT v.*, o.merchant_ref, o.amount, o.gateway, p.name AS package_name
                 FROM vouchers v
                 JOIN orders o ON o.id = v.order_id
                 JOIN packages p ON p.id = o.package_id

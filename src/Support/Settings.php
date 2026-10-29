@@ -13,6 +13,8 @@ use PDO;
  */
 final class Settings
 {
+    private static ?self $instance = null;
+
     /** @var array<string,mixed>|null */
     private ?array $cache = null;
 
@@ -23,6 +25,9 @@ final class Settings
         'features.subscription_paid_until' => 'FEATURE_SUBSCRIPTION_PAID_UNTIL',
         'features.pppoe_qris_unique' => 'FEATURE_PPOE_QRIS_UNIQUE',
         'features.wifi_captive_portal' => 'FEATURE_WIFI_CAPTIVE_PORTAL',
+        'features.webhook_simulator' => 'FEATURE_WEBHOOK_SIMULATOR',
+        'webhook_simulator.mode' => 'WEBHOOK_SIMULATOR_MODE',
+        'webhook_simulator.allow_in_production' => 'WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION',
         'pppoe_qris.auto_create' => 'PPPOE_QRIS_UNIQUE_AUTO_CREATE',
         'pppoe_qris.providers' => 'PPPOE_QRIS_UNIQUE_PROVIDERS',
         'pppoe_qris.guarantee_days' => 'PPPOE_SERVICE_GUARANTEE_DAYS',
@@ -47,6 +52,16 @@ final class Settings
         private readonly PDO $db,
         private readonly Env $env,
     ) {
+        self::$instance = $this;
+    }
+
+    public static function instance(): self
+    {
+        if (self::$instance === null) {
+            throw new \RuntimeException('Settings belum diinisialisasi.');
+        }
+
+        return self::$instance;
     }
 
     public function get(string $key, mixed $default = null): mixed
@@ -178,6 +193,7 @@ final class Settings
             'subscription_paid_until' => $this->feature('subscription_paid_until'),
             'pppoe_qris_unique' => $this->feature('pppoe_qris_unique'),
             'wifi_captive_portal' => $this->feature('wifi_captive_portal'),
+            'webhook_simulator' => $this->feature('webhook_simulator'),
         ];
     }
 }

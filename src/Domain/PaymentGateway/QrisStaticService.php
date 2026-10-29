@@ -84,6 +84,57 @@ final class QrisStaticService extends BaseProvider
         return $accountType === 'qris';
     }
 
+    /**
+     * QRIS statis has no gateway callback, so the simulator uses a synthetic
+     * payload. It is only valid in bypass mode (the admin UI/service rejects
+     * sign mode because there is no signature to verify).
+     */
+    public function buildSimulatedWebhook(array $target, string $event, ?int $amountOverride = null): array
+    {
+        $merchantRef = $this->simulatedRef($target);
+        $amount = $this->simulatedAmount($target, $amountOverride);
+        $body = [
+            'simulated' => true,
+            'status' => $event,
+            'merchant_ref' => $merchantRef,
+            'external_ref' => (string) ($target['external_ref'] ?? $target['qris_unique_ref'] ?? $merchantRef),
+            'amount' => $amount,
+            'reference' => 'SIM-' . strtoupper(bin2hex(random_bytes(4))),
+        ];
+
+        return [
+            'body' => $body,
+            'headers' => [],
+            'body_format' => 'json',
+        ];
+    }
+
+    public function normalizeSimulatedWebhook(array $headers, string $rawBody): array
+    {
+        $data = json_decode($rawBody, true);
+        if (!is_array($data)) {
+            throw new RuntimeException('Payload simulasi QRIS statis tidak valid.');
+        }
+        $status = strtolower((string) ($data['status'] ?? ''));
+        if (!in_array($status, ['paid', 'expired', 'failed'], true)) {
+            $status = 'pending';
+        }
+        $merchantRef = (string) ($data['merchant_ref'] ?? '');
+        $externalRef = (string) ($data['external_ref'] ?? '');
+        $reference = (string) ($data['reference'] ?? '');
+
+        return [
+            'merchant_ref' => $merchantRef !== '' ? $merchantRef : null,
+            'external_ref' => $externalRef !== '' ? $externalRef : null,
+            'amount' => $this->amountInt($data['amount'] ?? 0),
+            'status' => $status,
+            'gateway_reference' => $reference !== '' ? $reference : null,
+            'paid_at' => $status === 'paid' ? time() : null,
+            'event_key' => 'qris_static:' . ($reference !== '' ? $reference : $merchantRef) . ':' . strtoupper($status),
+            'kind' => 'auto',
+        ];
+    }
+
     /** @return array{0:string,1:bool} */
     private function qrForAmount(?int $amount): array
     {

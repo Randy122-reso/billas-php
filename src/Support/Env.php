@@ -107,6 +107,10 @@ final class Env
             'FEATURE_SUBSCRIPTION_PAID_UNTIL' => 'true',
             'FEATURE_PPOE_QRIS_UNIQUE' => 'true',
             'FEATURE_WIFI_CAPTIVE_PORTAL' => 'true',
+            'FEATURE_WEBHOOK_SIMULATOR' => 'false',
+
+            'WEBHOOK_SIMULATOR_MODE' => 'sign',
+            'WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION' => 'false',
 
             'PPPOE_QRIS_UNIQUE_AUTO_CREATE' => 'true',
             'PPPOE_QRIS_UNIQUE_PROVIDERS' => 'midtrans,xendit,duitku',
@@ -341,6 +345,25 @@ final class Env
             }
         }
 
+        // Fitur F: simulator tidak boleh aktif di production tanpa izin eksplisit.
+        $simulatorMode = strtolower(trim($this->string('WEBHOOK_SIMULATOR_MODE', 'sign')));
+        if ($this->isProduction()
+            && $this->bool('FEATURE_WEBHOOK_SIMULATOR')
+            && !$this->bool('WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION')) {
+            throw new RuntimeException(
+                'FEATURE_WEBHOOK_SIMULATOR=true tidak diizinkan di production. '
+                . 'Set WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=true jika ini disengaja.'
+            );
+        }
+        if (!in_array($simulatorMode, ['sign', 'bypass'], true)) {
+            throw new RuntimeException('WEBHOOK_SIMULATOR_MODE harus sign|bypass.');
+        }
+        if ($this->bool('FEATURE_WEBHOOK_SIMULATOR')
+            && $simulatorMode === 'sign'
+            && $this->configuredWebhookSigningProviders() === []) {
+            throw new RuntimeException('Mode sign membutuhkan minimal satu secret gateway terkonfigurasi.');
+        }
+
         if ($this->bool('FEATURE_WIFI_CAPTIVE_PORTAL')) {
             $ssid = trim($this->string('WIFI_SSID'));
             if ($ssid === '') {
@@ -369,6 +392,15 @@ final class Env
         if ($this->isProduction() && $this->string('WEBHOOK_SECRET') === '') {
             $this->warnings[] = 'WEBHOOK_SECRET kosong; verifikasi signature tetap dilakukan per provider.';
         }
+    }
+
+    /** @return list<string> */
+    public function configuredWebhookSigningProviders(): array
+    {
+        return array_values(array_filter(
+            $this->configuredPaymentProviders(),
+            static fn (string $provider): bool => $provider !== 'qris_static'
+        ));
     }
 
     /** @return list<string> */

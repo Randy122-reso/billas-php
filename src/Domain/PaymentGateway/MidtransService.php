@@ -119,4 +119,39 @@ final class MidtransService extends BaseProvider
     {
         return $accountType === 'qris' && $this->env->bool('QRIS_STATIC_ENABLED', true);
     }
+
+    public function buildSimulatedWebhook(array $target, string $event, ?int $amountOverride = null): array
+    {
+        $orderId = $this->simulatedRef($target);
+        $amount = $this->simulatedAmount($target, $amountOverride);
+        $statusCode = $event === 'PAID' ? '200' : '201';
+        $transactionStatus = match ($event) {
+            'PAID' => 'settlement',
+            'EXPIRED' => 'expire',
+            default => 'failure',
+        };
+        $body = [
+            'order_id' => $orderId,
+            'status_code' => $statusCode,
+            'gross_amount' => (string) $amount,
+            'transaction_status' => $transactionStatus,
+            'fraud_status' => 'accept',
+            'payment_type' => 'qris',
+            'transaction_id' => 'SIM-' . strtoupper(bin2hex(random_bytes(4))),
+            'transaction_time' => date('Y-m-d H:i:s'),
+        ];
+        if ($event === 'PAID') {
+            $body['settlement_time'] = date('Y-m-d H:i:s');
+        }
+        $body['signature_key'] = hash(
+            'sha512',
+            $body['order_id'] . $body['status_code'] . $body['gross_amount'] . $this->env->string('MIDTRANS_SERVER_KEY')
+        );
+
+        return [
+            'body' => $body,
+            'headers' => ['X-Signature-Key' => $body['signature_key']],
+            'body_format' => 'json',
+        ];
+    }
 }

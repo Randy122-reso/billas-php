@@ -33,6 +33,34 @@ final class CustomerPaymentAccountService
     }
 
     /** @return array<string,mixed>|null */
+    public function find(int $id): ?array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT a.*, c.name AS customer_name, c.code AS customer_code
+             FROM customer_payment_accounts a
+             JOIN customers c ON c.id = a.customer_id
+             WHERE a.id = ?'
+        );
+        $stmt->execute([$id]);
+
+        return $stmt->fetch() ?: null;
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function recent(int $limit = 10): array
+    {
+        $limit = max(1, min(50, $limit));
+        $stmt = $this->db->query(
+            "SELECT a.*, c.name AS customer_name, c.code AS customer_code
+             FROM customer_payment_accounts a
+             JOIN customers c ON c.id = a.customer_id
+             ORDER BY a.id DESC LIMIT {$limit}"
+        );
+
+        return $stmt->fetchAll();
+    }
+
+    /** @return array<string,mixed>|null */
     public function findActive(int $customerId, string $gateway, string $accountType): ?array
     {
         $stmt = $this->db->prepare(

@@ -15,6 +15,9 @@ $nav = [
     ['/admin/settings', 'Pengaturan', '⚙'],
     ['/admin/audit', 'Audit Trail', '⌘'],
 ];
+if (billas_feature('webhook_simulator')) {
+    $nav[] = ['/admin/simulator', 'Simulator', '⚡'];
+}
 ?>
 <!doctype html>
 <html lang="id">

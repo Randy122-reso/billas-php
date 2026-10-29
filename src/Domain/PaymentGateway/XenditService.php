@@ -95,6 +95,30 @@ final class XenditService extends BaseProvider
         return $accountType === 'qris' && $this->env->bool('QRIS_STATIC_ENABLED', true);
     }
 
+    public function buildSimulatedWebhook(array $target, string $event, ?int $amountOverride = null): array
+    {
+        $externalId = $this->simulatedRef($target);
+        $amount = $this->simulatedAmount($target, $amountOverride);
+        $body = [
+            'id' => 'SIM-' . strtoupper(bin2hex(random_bytes(4))),
+            'external_id' => $externalId,
+            'status' => match ($event) {
+                'PAID' => 'SUCCEEDED',
+                'EXPIRED' => 'EXPIRED',
+                default => 'FAILED',
+            },
+            'amount' => $amount,
+            'payment_method' => 'QRIS',
+            'updated' => gmdate('Y-m-d\TH:i:s.000\Z'),
+        ];
+
+        return [
+            'body' => $body,
+            'headers' => ['X-Callback-Token' => $this->env->string('XENDIT_WEBHOOK_TOKEN')],
+            'body_format' => 'json',
+        ];
+    }
+
     public function createPersistentAccount(array $context): array
     {
         $accountType = (string) ($context['account_type'] ?? 'va');

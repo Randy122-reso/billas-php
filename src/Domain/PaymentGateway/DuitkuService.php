@@ -100,4 +100,64 @@ final class DuitkuService extends BaseProvider
     {
         return $accountType === 'qris' && $this->env->bool('QRIS_STATIC_ENABLED', true);
     }
+
+    public function buildSimulatedWebhook(array $target, string $event, ?int $amountOverride = null): array
+    {
+        $merchantCode = $this->env->string('DUITKU_MERCHANT_CODE');
+        $apiKey = $this->env->string('DUITKU_API_KEY');
+        $merchantOrderId = $this->simulatedRef($target);
+        $amount = $this->simulatedAmount($target, $amountOverride);
+        $resultCode = match ($event) {
+            'PAID' => '00',
+            'EXPIRED' => '02',
+            default => '03',
+        };
+        $reference = 'SIM-' . strtoupper(bin2hex(random_bytes(4)));
+        $body = [
+            'merchantCode' => $merchantCode,
+            'amount' => (string) $amount,
+            'merchantOrderId' => $merchantOrderId,
+            'reference' => $reference,
+            'resultCode' => $resultCode,
+            'statusMessage' => match ($event) {
+                'PAID' => 'SUCCESS',
+                'EXPIRED' => 'EXPIRED',
+                default => 'FAILED',
+            },
+            // Duitku signs the callback body itself (form-urlencoded).
+            'signature' => md5($merchantCode . $amount . $merchantOrderId . $apiKey),
+        ];
+
+        return [
+            'body' => $body,
+            'headers' => [],
+            'body_format' => 'form',
+        ];
+    }
+
+    public function normalizeSimulatedWebhook(array $headers, string $rawBody): array
+    {
+        $data = [];
+        parse_str($rawBody, $data);
+        $resultCode = (string) ($data['resultCode'] ?? '');
+        $status = match ($resultCode) {
+            '00' => 'paid',
+            '02' => 'expired',
+            '03' => 'failed',
+            default => 'pending',
+        };
+        $merchantRef = (string) ($data['merchantOrderId'] ?? '');
+        $reference = (string) ($data['reference'] ?? '');
+
+        return [
+            'merchant_ref' => $merchantRef !== '' ? $merchantRef : null,
+            'external_ref' => null,
+            'amount' => $this->amountInt($data['amount'] ?? 0),
+            'status' => $status,
+            'gateway_reference' => $reference !== '' ? $reference : null,
+            'paid_at' => $status === 'paid' ? time() : null,
+            'event_key' => 'duitku:' . ($reference !== '' ? $reference : $merchantRef) . ':' . $resultCode,
+            'kind' => 'auto',
+        ];
+    }
 }

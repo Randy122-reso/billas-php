@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Billas\Domain;
 
 use Billas\Domain\PaymentGateway\GatewayFactory;
+use Billas\Support\Settings;
 use Billas\Support\Time;
 use PDO;
 use Psr\Log\LoggerInterface;
@@ -28,6 +29,7 @@ final class WebhookService
         private readonly PackageService $packages,
         private readonly AuditService $audit,
         private readonly LoggerInterface $logger,
+        private readonly Settings $settings,
     ) {
     }
 
@@ -35,18 +37,35 @@ final class WebhookService
      * @param array<string,string> $headers
      * @return array{status:string,message:string,event_id?:int,voucher_id?:int}
      */
-    public function handle(string $providerName, array $headers, string $rawBody): array
-    {
+    public function handle(
+        string $providerName,
+        array $headers,
+        string $rawBody,
+        bool $simulated = false,
+        bool $bypassSignature = false,
+    ): array {
+        $headers = $this->normalizeHeaders($headers);
         $provider = $this->gateways->make($providerName);
-        if (!$provider->isConfigured()) {
-            throw new RuntimeException('Gateway belum dikonfigurasi: ' . $providerName);
+
+        if ($bypassSignature && !$simulated) {
+            throw new RuntimeException('Bypass signature hanya diizinkan untuk webhook simulasi.');
         }
-        if (!$provider->verifyWebhook($headers, $rawBody)) {
-            $this->audit->record('system', 'webhook', 'webhook.invalid_signature', 'gateway', $providerName, null);
-            throw new RuntimeException('Signature webhook tidak valid.');
+        if ($simulated) {
+            $this->assertSimulatedAllowed($providerName, $headers);
+        }
+        if (!$bypassSignature) {
+            if (!$provider->isConfigured()) {
+                throw new RuntimeException('Gateway belum dikonfigurasi: ' . $providerName);
+            }
+            if (!$provider->verifyWebhook($headers, $rawBody)) {
+                $this->audit->record('system', 'webhook', 'webhook.invalid_signature', 'gateway', $providerName, null);
+                throw new RuntimeException('Signature webhook tidak valid.');
+            }
         }
 
-        $normalized = $provider->normalizeWebhook($headers, $rawBody);
+        $normalized = $simulated
+            ? $provider->normalizeSimulatedWebhook($headers, $rawBody)
+            : $provider->normalizeWebhook($headers, $rawBody);
         $eventId = $this->beginEvent($providerName, $normalized['event_key'], $normalized['merchant_ref'], $rawBody);
         if ($eventId === null) {
             return ['status' => 'duplicate', 'message' => 'Event sudah pernah diproses.'];
@@ -54,6 +73,12 @@ final class WebhookService
 
         try {
             if ($normalized['status'] !== 'paid') {
+                if ($simulated) {
+                    $result = $this->processSimulatedNonPaid($normalized);
+                    $this->finishEvent($eventId, (string) $result['status'], (string) $result['message']);
+
+                    return ['event_id' => $eventId] + $result;
+                }
                 $this->finishEvent($eventId, 'ignored', 'Status: ' . $normalized['status']);
 
                 return ['status' => 'ignored', 'message' => 'Event bukan pembayaran sukses.', 'event_id' => $eventId];
@@ -274,6 +299,115 @@ final class WebhookService
         );
 
         return ['status' => 'processed', 'message' => 'Pembayaran akun persisten diterapkan.'];
+    }
+
+    /**
+     * Simulated EXPIRED/FAILED events update pending state so operators can
+     * exercise the full lifecycle. Real webhooks keep the v4 behaviour (ignored).
+     *
+     * @param array<string,mixed> $normalized
+     * @return array{status:string,message:string}
+     */
+    private function processSimulatedNonPaid(array $normalized): array
+    {
+        $status = (string) ($normalized['status'] ?? '');
+        if (!in_array($status, ['expired', 'failed'], true)) {
+            return ['status' => 'ignored', 'message' => 'Status simulasi tidak mengubah data.'];
+        }
+
+        $merchantRef = (string) ($normalized['merchant_ref'] ?? '');
+        if ($merchantRef === '') {
+            return ['status' => 'unmatched', 'message' => 'Referensi pembayaran tidak ditemukan.'];
+        }
+
+        $order = $this->orders->findByMerchantRef($merchantRef);
+        if ($order !== null) {
+            if ($order['status'] === 'paid') {
+                return ['status' => 'ignored', 'message' => 'Order sudah dibayar.'];
+            }
+            $stmt = $this->db->prepare(
+                "UPDATE orders SET status = ? WHERE id = ? AND status IN ('pending','processing')"
+            );
+            $stmt->execute([$status, $order['id']]);
+            if ($stmt->rowCount() > 0) {
+                $this->audit->record('system', 'webhook', 'order.' . $status, 'order', (string) $order['id'], [
+                    'amount' => (int) ($normalized['amount'] ?? 0),
+                    'simulated' => true,
+                ]);
+
+                return ['status' => 'processed', 'message' => 'Order ditandai ' . $status . '.'];
+            }
+
+            return ['status' => 'ignored', 'message' => 'Order tidak berstatus pending.'];
+        }
+
+        $transaction = $this->invoices->transactionByMerchantRef($merchantRef);
+        if ($transaction !== null) {
+            if ($transaction['status'] === 'paid') {
+                return ['status' => 'ignored', 'message' => 'Transaksi sudah dibayar.'];
+            }
+            $stmt = $this->db->prepare(
+                "UPDATE payment_transactions SET status = ?, updated_at = ? WHERE id = ? AND status = 'pending'"
+            );
+            $stmt->execute([$status, Time::now(), $transaction['id']]);
+            if ($stmt->rowCount() > 0) {
+                $this->audit->record('system', 'webhook', 'payment.' . $status, 'payment', (string) $transaction['id'], [
+                    'invoice_id' => $transaction['invoice_id'],
+                    'simulated' => true,
+                ]);
+
+                return ['status' => 'processed', 'message' => 'Transaksi ditandai ' . $status . '.'];
+            }
+
+            return ['status' => 'ignored', 'message' => 'Transaksi tidak berstatus pending.'];
+        }
+
+        $reference = (string) ($normalized['external_ref'] ?? '') ?: $merchantRef;
+        if ($this->accounts->resolveByExternalRef($reference) !== null) {
+            return ['status' => 'ignored', 'message' => 'Akun persisten tidak memiliki status expired/failed.'];
+        }
+
+        $this->audit->record('system', 'webhook', 'webhook.unmatched', 'merchant_ref', $merchantRef, [
+            'amount' => (int) ($normalized['amount'] ?? 0),
+            'simulated' => true,
+        ]);
+
+        return ['status' => 'unmatched', 'message' => 'Pembayaran tidak cocok dengan order/invoice/akun.'];
+    }
+
+    /**
+     * @param array<string,string> $headers
+     */
+    private function assertSimulatedAllowed(string $providerName, array $headers): void
+    {
+        if (($headers['x-billas-simulated'] ?? '') !== '1') {
+            throw new RuntimeException('Simulated webhook tanpa header X-Billas-Simulated.');
+        }
+        if (!$this->settings->feature('webhook_simulator')) {
+            throw new RuntimeException('Simulator dimatikan.');
+        }
+        $this->logger->warning('Webhook simulated', ['provider' => $providerName]);
+    }
+
+    /**
+     * HTTP header names are case-insensitive. Normalize once so providers can
+     * rely on lowercase keys regardless of whether the caller came from Slim,
+     * PHP's $_SERVER superglobal, or the admin simulator.
+     *
+     * @param array<string,mixed> $headers
+     * @return array<string,string>
+     */
+    private function normalizeHeaders(array $headers): array
+    {
+        $normalized = [];
+        foreach ($headers as $name => $value) {
+            if (is_array($value)) {
+                $value = implode(',', array_map('strval', $value));
+            }
+            $normalized[strtolower((string) $name)] = (string) $value;
+        }
+
+        return $normalized;
     }
 
     private function beginEvent(string $provider, string $eventKey, ?string $merchantRef, string $payload): ?int

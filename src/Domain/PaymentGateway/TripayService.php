@@ -118,6 +118,35 @@ final class TripayService extends BaseProvider
         return false;
     }
 
+    public function buildSimulatedWebhook(array $target, string $event, ?int $amountOverride = null): array
+    {
+        $merchantRef = $this->simulatedRef($target);
+        $amount = $this->simulatedAmount($target, $amountOverride);
+        $body = [
+            'reference' => 'SIM-' . strtoupper(bin2hex(random_bytes(4))),
+            'merchant_ref' => $merchantRef,
+            'status' => $event === 'PAID' ? 'PAID' : strtoupper($event),
+            'total_amount' => $amount,
+            'amount' => $amount,
+            'payment_method' => 'QRIS',
+        ];
+        if ($event === 'PAID') {
+            $body['paid_at'] = time();
+        }
+
+        return [
+            'body' => $body,
+            'headers' => [
+                'X-Callback-Signature' => hash_hmac(
+                    'sha256',
+                    $this->simulatedJson($body),
+                    $this->env->string('TRIPAY_PRIVATE_KEY')
+                ),
+            ],
+            'body_format' => 'json',
+        ];
+    }
+
     public function createPersistentAccount(array $context): array
     {
         throw new RuntimeException('Tripay tidak mendukung akun pembayaran persisten.');

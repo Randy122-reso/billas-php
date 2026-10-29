@@ -12,10 +12,12 @@ use Billas\Controller\InternalController;
 use Billas\Controller\PagesController;
 use Billas\Controller\PaymentApiController;
 use Billas\Controller\WebhookController;
+use Billas\Controller\WebhookSimulatorController;
 use Billas\Domain\CaptivePortalService;
 use Billas\Middleware\AuthMiddleware;
 use Billas\Middleware\CaptiveSessionMiddleware;
 use Billas\Middleware\CronAuthMiddleware;
+use Billas\Middleware\SimulatorFlagMiddleware;
 use Billas\Support\Session;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -128,6 +130,16 @@ final class Routes
             $group->post('/settings', $this->call(AdminPortalController::class, 'settingsSave'));
             $group->post('/test-gateway', $this->call(AdminPortalController::class, 'testGateway'));
             $group->get('/audit', $this->call(AdminPortalController::class, 'audit'));
+
+            $simulator = $group->group('/simulator', function (RouteCollectorProxy $simulator): void {
+                $simulator->get('', $this->call(WebhookSimulatorController::class, 'index'));
+                $simulator->post('/webhook', $this->call(WebhookSimulatorController::class, 'send'));
+                $simulator->get('/runs', $this->call(WebhookSimulatorController::class, 'runs'));
+            });
+            $simulator->add(new SimulatorFlagMiddleware(
+                $c->get(\Billas\Support\Settings::class),
+                $c->get(\Billas\Support\Env::class)
+            ));
         });
 
         $admin->add(new AuthMiddleware($c->get(Session::class), 'admin'));

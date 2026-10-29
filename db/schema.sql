@@ -278,3 +278,24 @@ CREATE TABLE IF NOT EXISTS job_state (
   last_result TEXT,
   updated_at INTEGER NOT NULL DEFAULT 0
 );
+
+-- ============================================================
+-- v4.2 — Fitur F: Webhook Simulator (#BARU v4.2)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS simulator_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_type TEXT NOT NULL CHECK (target_type IN ('order','invoice','persistent_account')),
+  target_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  event TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK (mode IN ('sign','bypass')),
+  request_body TEXT,          -- signature di-mask sebelum disimpan
+  response_status INTEGER,
+  response_body TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_simulator_runs_target
+  ON simulator_runs(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_simulator_runs_created
+  ON simulator_runs(created_at);

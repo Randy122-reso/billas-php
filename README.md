@@ -17,6 +17,7 @@ PPPoE bulanan, QRIS unik per pelanggan, dan captive portal WiFi publik
 | PPPoE | Invoice bulanan, isolir otomatis, reaktivasi setelah bayar, push MikroTik lewat worker. |
 | **Fitur D** | **QRIS unik per pelanggan PPPoE** + `service_guaranteed_until`; cron isolir menghormati garansi. |
 | **Fitur E** | **Captive portal RTRWNET**: pengunjung pilih paket → bayar QRIS → dapat password WiFi unik. |
+| **Fitur F** | **Webhook Simulator admin-only** (flag-gated, default OFF): uji alur bayar tanpa menunggu gateway nyata. |
 | Pembayaran | Tripay, Midtrans, Xendit, Duitku, QRIS statis; webhook terpadu dan idempotent. |
 | Operasional | Admin back-office, portal pelanggan, audit trail, retry queue, backup SQLite, health check. |
 | Cron | `POST /internal/cron/run`, idempotent lewat `job_state`, dipicu RouterOS Scheduler. |
@@ -168,6 +169,9 @@ Variabel penting:
 | `CRON_HMAC_ENABLED` | `false` | `true` mewajibkan `X-Cron-Signature` (HMAC body). |
 | `FEATURE_PPOE_QRIS_UNIQUE` | `true` | Toggle awal Fitur D (bisa diubah di admin). |
 | `FEATURE_WIFI_CAPTIVE_PORTAL` | `true` | Toggle awal Fitur E (bisa diubah di admin). |
+| `FEATURE_WEBHOOK_SIMULATOR` | `false` | Toggle Fitur F. **Jangan aktifkan di production** kecuali untuk audit/demo ketat. |
+| `WEBHOOK_SIMULATOR_MODE` | `sign` | `sign` memverifikasi signature provider; `bypass` melewati signature (khusus dev). |
+| `WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION` | `false` | Guard tambahan; `true` hanya jika simulator benar-benar diperlukan di production. |
 | `PPPOE_QRIS_UNIQUE_PROVIDERS` | `midtrans,xendit,duitku` | Urutan gateway QRIS unik. |
 | `PPPOE_SERVICE_GUARANTEE_DAYS` | `0` | Buffer garansi setelah `period_end`. |
 | `WIFI_SSID` / `WIFI_ALLOWED_SSIDS` | `RTRWNET` | SSID captive portal yang diizinkan. |
@@ -203,6 +207,96 @@ Catatan:
   Midtrans/Duitku, QRIS unik memakai payload QRIS statis yang di-flag; Xendit
   juga mendukung VA persisten.
 - `WEBHOOK_SECRET` opsional; verifikasi signature tetap dilakukan per provider.
+
+## Simulasi Pembayaran (admin-only, default OFF)
+
+Fitur F menambahkan **Webhook Simulator** untuk menguji alur pembayaran tanpa
+menunggu callback gateway nyata. Simulator hanya dapat diakses admin yang sudah
+login, dilindungi CSRF, dibatasi **20 request/menit/IP**, dan **mati secara
+default**.
+
+> **Peringatan production:** biarkan `FEATURE_WEBHOOK_SIMULATOR=false` di
+> production. Simulator dapat menerbitkan voucher, melunasi invoice, dan
+> memperpanjang `paid_until` tanpa pembayaran nyata. Jika terpaksa dipakai untuk
+> audit/demo, set `WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=true`, batasi akses
+> `/admin/simulator*` dengan Cloudflare Access atau lapisan auth tambahan, dan
+> matikan kembali segera setelah selesai.
+
+### Mengaktifkan (lokal/staging)
+
+```dotenv
+FEATURE_WEBHOOK_SIMULATOR=true
+WEBHOOK_SIMULATOR_MODE=sign
+WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=false
+```
+
+- Flag juga dapat diubah dari **Admin → Pengaturan** setelah seed pertama.
+- `Env::validate()` menolak boot bila simulator aktif di production tanpa
+  `WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=true`, bila mode tidak valid, atau bila
+  mode `sign` dipilih sementara secret gateway yang didukung belum lengkap.
+
+### Mode
+
+| Mode | Perilaku |
+|---|---|
+| `sign` (default) | Payload dibangun sesuai format provider dan **signature tetap diverifikasi** oleh pipeline webhook asli. Gunakan untuk menguji kesesuaian signature. |
+| `bypass` | Melewati verifikasi signature. Hanya untuk development. QRIS statis wajib memakai mode ini karena tidak memiliki signature webhook. |
+
+Kedua mode mengirim header internal `X-Billas-Simulated: 1`; header ini tidak
+diterima dari route webhook publik dan hanya dipakai simulator.
+
+### Target dan event
+
+| Target | ID | Efek |
+|---|---|---|
+| `order` | UUID order | `PAID` menerbitkan voucher; `EXPIRED`/`FAILED` mengubah order pending menjadi expired/failed tanpa voucher. |
+| `invoice` | ID invoice | `PAID` melunasi invoice dan memperpanjang `paid_until` + `service_guaranteed_until`; transaksi pending dipakai ulang atau dibuat sintetis. |
+| `persistent_account` | ID akun QRIS pelanggan | `PAID` melunasi invoice tertua atau membuat invoice prabayar. |
+
+Event yang didukung: `PAID`, `EXPIRED`, `FAILED`. Override nominal dapat diisi
+untuk menguji kasus amount mismatch. Provider yang belum mengimplementasikan
+`buildSimulatedWebhook()` akan menampilkan error jelas, dan kegagalan build tetap
+dicatat.
+
+### Halaman, route, dan CLI
+
+| Akses | Keterangan |
+|---|---|
+| `GET /admin/simulator` | Form simulator, tautan konteks, dan 20 run terakhir. |
+| `POST /admin/simulator/webhook` | Bangun + dispatch webhook sintetis (CSRF wajib). |
+| `GET /admin/simulator/runs` | Riwayat run dalam JSON (signature di-mask). |
+| `php bin/console simulate:webhook order <uuid> --provider=tripay --event=PAID --mode=sign` | Jalur CLI untuk staging/otomasi. |
+| `php bin/console simulate:webhook invoice <id> --provider=midtrans --event=PAID` | Contoh target invoice. |
+| `php bin/console simulate:webhook persistent_account <id> --provider=xendit --event=PAID` | Contoh akun QRIS persisten. |
+
+Tombol **Simulasi** juga tersedia di halaman admin voucher, billing, dan
+pelanggan untuk mengisi target secara otomatis.
+
+### Audit dan masking
+
+- Setiap dispatch dicatat di `simulator_runs` (target, provider, mode, status,
+  ringkasan respons) dan `audit_trail` dengan aksi `simulator.dispatch`.
+- Header `X-Callback-Signature`, `X-Signature`, `X-Signature-Key`,
+  `Authorization`, dan `X-Callback-Token`, serta field body `signature_key`,
+  `signature`, `token`, dan `callback_token`, disimpan sebagai `***MASKED***`.
+- `simulator_runs` hanya alat observability; pipeline webhook asli tidak
+  membacanya.
+- Event `EXPIRED`/`FAILED` hanya mengubah status order/transaksi pending pada
+  dispatch simulasi. Webhook nyata dengan event tersebut tetap diabaikan agar
+  status pembayaran asli tidak berubah.
+
+### Verifikasi cepat
+
+1. Aktifkan flag, login admin, buka `/admin/simulator`.
+2. Pilih target `order`, masukkan UUID order pending, provider `tripay`, event
+   `PAID`, mode `sign`; submit.
+3. Pastikan respons sukses, voucher muncul di `/voucher/{orderId}`, dan baris
+   baru tercatat di riwayat simulator.
+4. Ulangi dengan event `EXPIRED` pada order pending lain; pastikan order menjadi
+   expired dan tidak ada voucher.
+5. Buka `/admin/simulator/runs`; pastikan signature/token tidak tampil
+   plaintext dan audit `simulator.dispatch` tercatat.
+6. Matikan kembali flag setelah pengujian.
 
 ## Alur Utama
 
@@ -254,6 +348,7 @@ Catatan:
 | Readiness (DB, schema, gateway) | `/ready` |
 | Cron internal | `POST /internal/cron/run` |
 | Webhook | `POST /api/webhook/{provider}` |
+| Webhook Simulator (admin) | `/admin/simulator` |
 
 ## RouterOS
 
@@ -329,6 +424,7 @@ php bin/console cron:run --force     # jalankan semua task sekali
 php bin/console cron:run --tasks=vouchers,order_expire
 php bin/console qris:create <id> [gateway]
 php bin/console qris:create --all [gateway]
+php bin/console simulate:webhook <target> <id> --provider=tripay --event=PAID --mode=sign
 php bin/worker.php --once            # kuras retry queue sekali
 php bin/worker.php --health          # health probe worker
 php bin/cron.php --force             # trigger cron via CLI
@@ -419,8 +515,9 @@ Get-ChildItem -Recurse -Filter *.php | Where-Object { $_.FullName -notmatch '\\v
 ```
 
 Test mencakup skema/migrasi, Fitur D (QRIS unik + garansi), Fitur E (captive
-portal + voucher), kalkulasi kalender, QR util, crypto, dan rekonsiliasi akun
-QRIS persisten.
+portal + voucher), Fitur F (webhook simulator: build, signature, masking,
+middleware, rate limit, HTTP/CLI), kalkulasi kalender, QR util, crypto, dan
+rekonsiliasi akun QRIS persisten.
 
 ## Struktur Proyek
 
@@ -447,6 +544,8 @@ var/                 DB lokal, backup, PID server dev
 - Semua form mutasi memakai POST + CSRF; session HttpOnly/SameSite.
 - Webhook memverifikasi signature/token per provider dan idempotent lewat
   `webhook_events`.
+- Simulator admin-only memakai `AuthMiddleware` + CSRF + rate limit, default
+  OFF, dan diblokir di production kecuali diizinkan eksplisit.
 - Cron memakai `X-Cron-Token` atau HMAC `X-Cron-Signature`; bandingkan dengan
   `hash_equals`.
 - Password router dienkripsi AES-256-GCM; password pelanggan di-hash bcrypt.
@@ -465,6 +564,8 @@ var/                 DB lokal, backup, PID server dev
 | Cron 401/503 | `CRON_TOKEN` kosong/salah, `CRON_HMAC_ENABLED` tidak sesuai, atau `CRON_ENABLED=false`. |
 | Voucher tidak masuk MikroTik | Cek `retry_queue`, log worker, kredensial router, dan `MIKROTIK_FAKE`. |
 | Captive portal 403 | `FEATURE_WIFI_CAPTIVE_PORTAL` mati atau SSID tidak ada di `WIFI_ALLOWED_SSIDS`. |
+| Simulator 403 | `FEATURE_WEBHOOK_SIMULATOR=false`, atau production tanpa `WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=true`. |
+| Simulator 422/401 | Signature mode `sign` tidak cocok, target/ID salah, atau gateway belum dikonfigurasi; cek riwayat run. |
 | Container app gagal boot | `AUTO_MIGRATE=1` dan migrasi gagal; lihat `docker compose logs billas-app`. |
 
 ---

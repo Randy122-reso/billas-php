@@ -8,6 +8,7 @@ use Billas\Database\Seeder;
 use Billas\Domain\BackupService;
 use Billas\Domain\CronService;
 use Billas\Domain\CustomerPaymentAccountService;
+use Billas\Domain\WebhookSimulatorService;
 use Billas\Kernel;
 
 /**
@@ -45,6 +46,7 @@ Billas v4 console
   cron:list                        Show configured cron tasks
   qris:create <id> [gateway]       Create/reuse a customer's unique QRIS
   qris:create --all [gateway]      Backfill unique QRIS for active PPPoE customers
+  simulate:webhook <target> <id>   Dispatch a synthetic webhook (order|invoice|persistent_account)
   status                           Show DB, migration, queue and job status
   help                             This help
 
@@ -52,6 +54,7 @@ Examples:
   php bin/console migrate --seed
   php bin/console cron:run --force --tasks=vouchers,order_expire
   php bin/console qris:create 12 midtrans
+  php bin/console simulate:webhook order <uuid> --provider=tripay --event=PAID --mode=sign
 
 TXT;
 }
@@ -149,6 +152,30 @@ try {
             billas_json([
                 'status' => 'ok',
                 'cron' => $container->get(CronService::class)->tick(array_values(array_unique($tasks)), $force),
+            ]);
+            break;
+
+        case 'simulate:webhook':
+            $targetType = (string) ($options['target'] ?? $options['target_type'] ?? $positional[0] ?? '');
+            $targetId = (string) ($options['id'] ?? $options['target_id'] ?? $positional[1] ?? '');
+            $provider = (string) ($options['provider'] ?? $positional[2] ?? '');
+            $event = strtoupper((string) ($options['event'] ?? $positional[3] ?? 'PAID'));
+            $mode = (string) ($options['mode'] ?? '');
+            $amount = isset($options['amount']) && is_string($options['amount']) && $options['amount'] !== ''
+                ? (int) preg_replace('/\D+/', '', $options['amount'])
+                : null;
+            if ($targetType === '' || $targetId === '' || $provider === '') {
+                fwrite(STDERR, 'simulate:webhook membutuhkan target, id, dan provider.' . PHP_EOL);
+                exit(2);
+            }
+            /** @var WebhookSimulatorService $simulator */
+            $simulator = $container->get(WebhookSimulatorService::class);
+            if ($mode === '') {
+                $mode = $simulator->mode();
+            }
+            billas_json([
+                'status' => 'ok',
+                'result' => $simulator->simulate($targetType, $targetId, $provider, $event, $amount, $mode, null),
             ]);
             break;
 

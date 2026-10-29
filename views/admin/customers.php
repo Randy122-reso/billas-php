@@ -178,6 +178,9 @@ $guarantee = [
                                             <button class="btn btn-danger btn-sm" type="submit">Nonaktifkan</button>
                                         </form>
                                     <?php endif; ?>
+                                    <?php if (billas_feature('webhook_simulator') && (int) $account['active'] === 1): ?>
+                                        <a class="link small" href="<?= e(billas_url('/admin/simulator?target_type=persistent_account&target_id=' . (int) $account['id'] . '&provider=' . rawurlencode((string) $account['gateway']) . '&event=PAID')) ?>">Simulasi</a>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

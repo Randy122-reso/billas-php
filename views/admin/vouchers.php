@@ -63,6 +63,9 @@
                                     <button class="btn btn-danger btn-sm" type="submit" onclick="return confirm('Cabut voucher ini? Pengguna akan kehilangan akses.')">Cabut</button>
                                 </form>
                             <?php endif; ?>
+                            <?php if (billas_feature('webhook_simulator') && !empty($voucher['order_id'])): ?>
+                                <a class="link small" href="<?= e(billas_url('/admin/simulator?target_type=order&target_id=' . rawurlencode((string) $voucher['order_id']) . '&provider=' . rawurlencode((string) ($voucher['gateway'] ?? '')) . '&event=PAID')) ?>">Simulasi</a>
+                            <?php endif; ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>

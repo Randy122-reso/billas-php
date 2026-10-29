@@ -79,6 +79,8 @@ final class Seeder
             'payment.default_gateway' => $this->env->string('PAYMENT_DEFAULT_GATEWAY', 'qris_static'),
             'payment.fallback_chain' => $this->env->string('PAYMENT_FALLBACK_CHAIN', 'qris_static'),
             'payment.order_ttl' => (string) $this->env->int('PAYMENT_ORDER_TTL', 900),
+            'webhook_simulator.mode' => $this->env->string('WEBHOOK_SIMULATOR_MODE', 'sign'),
+            'webhook_simulator.allow_in_production' => $this->env->bool('WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION', false) ? '1' : '0',
         ];
 
         $stmt = $this->db->prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

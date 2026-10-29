@@ -65,6 +65,9 @@
                             <?php else: ?>
                                 <span class="muted small"><?= e($invoice['paid_at'] ? billas_date((int) $invoice['paid_at'], true) : '—') ?></span>
                             <?php endif; ?>
+                            <?php if (billas_feature('webhook_simulator') && $invoice['status'] === 'unpaid'): ?>
+                                <a class="link small" href="<?= e(billas_url('/admin/simulator?target_type=invoice&target_id=' . (int) $invoice['id'] . '&event=PAID')) ?>">Simulasi</a>
+                            <?php endif; ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>

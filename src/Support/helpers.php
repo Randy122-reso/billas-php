@@ -38,6 +38,22 @@ if (!function_exists('billas_env')) {
     }
 }
 
+if (!function_exists('billas_feature')) {
+    /** Read a feature flag from runtime settings, falling back to env. */
+    function billas_feature(string $name): bool
+    {
+        try {
+            return \Billas\Support\Settings::instance()->feature($name);
+        } catch (\Throwable) {
+            try {
+                return \Billas\Support\Env::instance()->bool('FEATURE_' . strtoupper($name));
+            } catch (\Throwable) {
+                return false;
+            }
+        }
+    }
+}
+
 if (!function_exists('billas_url')) {
     /** Build an absolute application URL; falls back to relative paths. */
     function billas_url(string $path = ''): string

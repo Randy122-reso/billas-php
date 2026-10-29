@@ -120,4 +120,51 @@ abstract class BaseProvider implements PaymentProvider
     {
         return $accountType === 'qris' && $this->env->bool('QRIS_STATIC_ENABLED', true);
     }
+
+    /**
+     * Fitur F (v4.2): optional provider hook. Providers that do not override
+     * this method produce a clear error in the admin simulator.
+     *
+     * @param array<string,mixed> $target
+     * @return array{body:array<string,mixed>,headers:array<string,string>,body_format?:string}
+     */
+    public function buildSimulatedWebhook(array $target, string $event, ?int $amountOverride = null): array
+    {
+        throw new \LogicException(static::class . ' belum mendukung simulator.');
+    }
+
+    /**
+     * Normalizer used only for simulated bypass dispatches. Providers with a
+     * real webhook format simply reuse their production normalizer.
+     *
+     * @param array<string,string> $headers
+     * @return array{merchant_ref:?string,external_ref:?string,amount:int,status:string,gateway_reference:?string,paid_at:?int,event_key:string,kind:string}
+     */
+    public function normalizeSimulatedWebhook(array $headers, string $rawBody): array
+    {
+        return $this->normalizeWebhook($headers, $rawBody);
+    }
+
+    /** @param array<string,mixed> $target */
+    protected function simulatedRef(array $target): string
+    {
+        $ref = $target['merchant_ref'] ?? $target['qris_unique_ref'] ?? $target['external_ref'] ?? '';
+        if (!is_scalar($ref) || (string) $ref === '') {
+            $ref = 'SIM-' . (string) ($target['id'] ?? bin2hex(random_bytes(4)));
+        }
+
+        return (string) $ref;
+    }
+
+    /** @param array<string,mixed> $target */
+    protected function simulatedAmount(array $target, ?int $amountOverride = null): int
+    {
+        return $amountOverride ?? (int) ($target['amount'] ?? 0);
+    }
+
+    /** @param array<string,mixed> $body */
+    protected function simulatedJson(array $body): string
+    {
+        return json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';
+    }
 }

@@ -587,6 +587,127 @@ var/                 DB lokal, backup, PID server dev
 
 ---
 
+Berikut adalah rangkuman komprehensif (Master Troubleshooting Guide) dari seluruh perjalanan debugging kita. Anda bisa menyimpan teks ini sebagai dokumentasi resmi (misalnya simpan di file `CATATAN-TROUBLESHOOTING-BILLAS.md`).
+
+Ini adalah **catatan emas** yang mengikat semua pelajaran dari kegagalan *smoke test* hingga akhirnya aplikasi berjalan sempurna.
+
+---
+
+# 📘 BILLAS v4.2 — MASTER TROUBLESHOOTING & FIX GUIDE
+**Konteks:** Deployment Model B (CHR Container), Single Disk, App + Worker terpisah.
+
+## ⚠️ Masalah 1: Worker Gagal Boot (Exit Status 1)
+**Gejala:** Container worker langsung mati. Di `/log/print where topics~"container"` muncul:
+`[billas-worker] boot failed: APP_URL production wajib menggunakan https://.`
+Meskipun Anda sudah mengeset `ALLOW_HTTP_IN_PRODUCTION=true` di envlist.
+
+**Penyebab:** Script bootstrap worker (`worker.php`) **tidak menghiraukan** flag `ALLOW_HTTP_IN_PRODUCTION`. Guard `APP_URL production wajib https://` hanya bisa dilewati jika `APP_ENV` bukan `production`.
+
+**Solusi:**
+Ubah `APP_ENV` menjadi `local` di envlist CHR.
+```routeros
+/container/envs/set [find where name=billas-env and key=APP_ENV] value=local
+```
+*(Catatan: Selalu restart container setelah mengubah envlist).*
+
+---
+
+## ⚠️ Masalah 2: Gagal Import Image (Format Tar Salah)
+**Gejala:** Tar sudah di-SCP ke CHR, tapi saat `/container/add`, container gagal diekstrak atau error `no manifest.json in archive`. Jika dicek dengan `tar -tf`, isinya berupa folder `blobs/sha256/...` (Format OCI).
+
+**Penyebab:** Docker versi baru menggunakan format OCI Image Layout secara default. RouterOS CHR hanya bisa membaca format **Legacy Docker Archive** (`manifest.json`).
+
+**Solusi:**
+Gunakan `skopeo` di Lubuntu untuk konversi sebelum dikirim ke CHR.
+```bash
+sudo apt install skopeo
+skopeo copy oci-archive:billas-v4.2-app.tar docker-archive:billas-v4.2-app-legacy.tar
+# (Lakukan hal yang sama untuk worker, lalu SCP file *-legacy.tar ke CHR)
+```
+
+---
+
+## ⚠️ Masalah 3: Error "expected end of command" saat `/container/add`
+**Gejala:** Saat mengeksekusi perintah `/container/add ... cpu-list=0,1 ...`, muncul error `expected end of command`.
+
+**Penyebab:** RouterOS versi patched (seperti build 7.20.2 `elseif@live.cn`) tidak mendukung parameter `cpu-list` pada perintah `/container/add`.
+
+**Solusi:**
+Hapus parameter `cpu-list=0,1` dari perintah import.
+```routeros
+/container/add file=disk1/billas-v4.2-app-legacy.tar interface=veth-billas-app root-dir=disk1/billas-app-root mounts=mount-data,mount-logs envlist=billas-env hostname=billas-app.local memory-high=768M logging=yes comment="Billas app v4.2"
+```
+
+---
+
+## ⚠️ Masalah 4: Error "root-dir already used by other container"
+**Gejala:** Anda mencoba `/container/add` ulang, tapi gagal.
+
+**Penyebab:** Container sudah pernah dibuat sebelumnya (meskipun statusnya mati/stopped).
+
+**Solusi:**
+**Jangan di-add lagi!** Cukup jalankan `/container/start` pada container yang sudah ada.
+
+---
+
+## 🚨 Masalah 5: Konfigurasi "Nyangkut" (Settings Table Precedence)
+**Gejala:** Anda mengubah envlist (misal: ingin mengaktifkan QRIS Unik), tapi di UI Admin atau `/ready` nilainya tetap `false` atau kosong.
+
+**Penyebab:** Arsitektur Billas memprioritaskan **Database SQLite** di atas Envlist (Env hanyalah nilai awal/seed). 
+Selain itu, aplikasi menggunakan format **titik (dot-notation)** di database (contoh: `features.pppoe_qris_unique = 0`). Jika Anda merubahnya lewat SQL dengan format garis bawah (snake_case), aplikasi tidak akan membacanya.
+
+**Solusi (The Ultimate Fix):**
+Masuk ke shell App, lalu paksa update menggunakan format dot-notation yang benar:
+```routeros
+/container/shell [find where comment="Billas app v4.2"]
+```
+```sh
+php -r '$db = new PDO("sqlite:/data/billas.db"); $sql = "UPDATE settings SET value = \"1\" WHERE key IN (\"features.pppoe_qris_unique\", \"features.wifi_captive_portal\"); UPDATE settings SET value = \"qris_static\" WHERE key IN (\"payment.default_gateway\", \"payment.fallback_chain\");"; $db->exec($sql);'
+```
+Lalu restart App.
+
+---
+
+## ⚠️ Catatan Kecil (Non-Fatal / Aman Diabaikan)
+1. **`io_setup() failed`**: Nginx mencoba Async I/O di CHR yang tidak mendukung. App tetap jalan normal.
+2. **`OPcache can't be temporary enabled`**: Peringatan PHP saat start. Tidak mengganggu request.
+3. **`worker.log` tidak ada**: Worker Anda melog ke `app-YYYY-MM-DD.log`. Gunakan file itu untuk cek log worker.
+4. **`memory-current` kecil (6-12 MiB)**: Metrik RouterOS tidak akurat. Patokan utama adalah `worker.php --health` dan file `billas.db-wal`.
+
+---
+
+## 🛠️ CHEAT SHEET: Cara Cek "Kesehatan" Container
+Jika ada masalah, selalu periksa 3 hal ini berurutan:
+
+**1. Cek Status & Log CHR:**
+```routeros
+/container/print detail
+/log/print where topics~"container"
+```
+
+**2. Cek Kesehatan Worker:**
+```routeros
+/container/shell [find where comment="Billas worker v4.2"]
+php /app/bin/worker.php --health
+exit
+```
+
+**3. Cek Kesiapan Aplikasi (Endpoint `/ready`):**
+Buka browser: `http://192.168.111.1:8080/ready`
+Pastikan semua indikator `database`, `schema`, dan `gateways` bernilai `true`.
+
+---
+
+**Aturan Emas (Golden Rules) Deployment Billas:**
+1. **Selalu urutan Worker dulu, baru App** saat Start.
+2. **Selalu urutan App dulu, baru Worker** saat Stop/Restart.
+3. **Jangan pernah mengubah runtime flag lewat Envlist** jika DB sudah pernah ter-seed. Ubahlah lewat UI Admin atau SQL (seperti panduan Masalah 5).
+4. **RouterOS CHR hanya menerima format Legacy Tar** (bukan OCI).
+
+---
+
+Simpan catatan ini. Dengan panduan ini, Anda tidak akan pernah terjebak berjam-jam di masalah yang sama, dan Anda siap menjadi operator Billas yang handal!
+
 Billas v4 adalah revisi aditif dari Billas v3: perilaku lama dipertahankan,
 fitur baru di-gate flag, dan migrasi dirancang idempotent agar database produksi
 dapat ditingkatkan tanpa langkah destruktif.

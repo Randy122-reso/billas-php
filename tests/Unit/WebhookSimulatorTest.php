@@ -181,7 +181,7 @@ final class WebhookSimulatorTest extends TestCase
         $env->validate();
     }
 
-    public function testSignModeRequiresAtLeastOneSigningProvider(): void
+    public function testSignModeWithoutProviderBootsWithWarning(): void
     {
         $env = $this->envWith([
             'APP_ENV' => 'testing',
@@ -198,9 +198,45 @@ final class WebhookSimulatorTest extends TestCase
             'DUITKU_API_KEY' => '',
         ]);
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Mode sign membutuhkan');
         $env->validate();
+
+        self::assertTrue($env->bool('FEATURE_WEBHOOK_SIMULATOR'));
+        self::assertStringContainsString('Mode sign', implode("\n", $env->warnings()));
+    }
+
+    public function testProductionSimulatorSignWithoutProviderBootsWithHttpLabOptIn(): void
+    {
+        $env = $this->envWith([
+            'APP_ENV' => 'production',
+            'APP_DEBUG' => 'false',
+            'APP_URL' => 'http://192.168.111.1:8080',
+            'ALLOW_HTTP_IN_PRODUCTION' => 'true',
+            'SESSION_SECRET' => str_repeat('s', 32),
+            'ENCRYPTION_KEY' => str_repeat('e', 32),
+            'CRON_TOKEN' => str_repeat('c', 32),
+            'FEATURE_WIFI_CAPTIVE_PORTAL' => 'true',
+            'FEATURE_PPOE_QRIS_UNIQUE' => 'true',
+            'WIFI_SSID' => 'RTRWNET',
+            'WIFI_ALLOWED_SSIDS' => 'RTRWNET',
+            'FEATURE_WEBHOOK_SIMULATOR' => 'true',
+            'WEBHOOK_SIMULATOR_MODE' => 'sign',
+            'WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION' => 'true',
+            'QRIS_STATIC_ENABLED' => 'true',
+            'QRIS_STATIC_PAYLOAD' => '00020101021126650014COM.GO-JEK.WWW',
+            'TRIPAY_API_KEY' => '',
+            'TRIPAY_PRIVATE_KEY' => '',
+            'TRIPAY_MERCHANT_CODE' => '',
+            'MIDTRANS_SERVER_KEY' => '',
+            'XENDIT_SECRET_KEY' => '',
+            'DUITKU_MERCHANT_CODE' => '',
+            'DUITKU_API_KEY' => '',
+        ]);
+
+        $env->validate();
+
+        $warnings = implode("\n", $env->warnings());
+        self::assertStringContainsString('ALLOW_HTTP_IN_PRODUCTION=true', $warnings);
+        self::assertStringContainsString('Mode sign', $warnings);
     }
 
     public function testBypassModeDoesNotRequireGatewaySecrets(): void

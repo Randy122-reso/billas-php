@@ -86,6 +86,7 @@ final class Env
             'APP_DEBUG' => 'false',
             'APP_VERSION' => '4.0.0',
             'APP_URL' => 'http://localhost:8080',
+            'ALLOW_HTTP_IN_PRODUCTION' => 'false',
             'BASE_URL' => '',
             'TZ' => 'Asia/Jakarta',
             'LOG_LEVEL' => 'info',
@@ -328,7 +329,7 @@ final class Env
         ];
         foreach ($required as $key) {
             if (strlen((string) $this->get($key, '')) < 16) {
-                if ($this->isProduction() || !$this->isLocal()) {
+                if (!$this->isLocal()) {
                     throw new RuntimeException("{$key} wajib diisi minimal 16 karakter. Lihat .env.example.");
                 }
                 $this->warnings[] = "{$key} lemah/kosong; hanya diperbolehkan untuk mode lokal.";
@@ -341,7 +342,13 @@ final class Env
             }
             $url = $this->string('APP_URL');
             if (!str_starts_with($url, 'https://')) {
-                throw new RuntimeException('APP_URL production wajib menggunakan https://.');
+                if (!$this->bool('ALLOW_HTTP_IN_PRODUCTION') || !str_starts_with($url, 'http://')) {
+                    throw new RuntimeException(
+                        'APP_URL production wajib menggunakan https://. '
+                        . 'Set ALLOW_HTTP_IN_PRODUCTION=true hanya untuk lab/testing dengan http://.'
+                    );
+                }
+                $this->warnings[] = 'ALLOW_HTTP_IN_PRODUCTION=true: APP_URL memakai HTTP tanpa TLS; hanya untuk lab/testing.';
             }
         }
 
@@ -361,7 +368,8 @@ final class Env
         if ($this->bool('FEATURE_WEBHOOK_SIMULATOR')
             && $simulatorMode === 'sign'
             && $this->configuredWebhookSigningProviders() === []) {
-            throw new RuntimeException('Mode sign membutuhkan minimal satu secret gateway terkonfigurasi.');
+            $this->warnings[] = 'Mode sign tanpa gateway signing terkonfigurasi; simulasi sign akan gagal saat dispatch. '
+                . 'Gunakan WEBHOOK_SIMULATOR_MODE=bypass atau isi secret gateway.';
         }
 
         if ($this->bool('FEATURE_WIFI_CAPTIVE_PORTAL')) {

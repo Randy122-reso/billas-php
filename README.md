@@ -71,6 +71,12 @@ ENCRYPTION_KEY=<minimal-16-karakter-acak>
 CRON_TOKEN=<minimal-16-karakter-acak>
 ```
 
+Fitur D/E aktif secara default dan mewajibkan minimal satu gateway
+terkonfigurasi. Isi `QRIS_STATIC_PAYLOAD` (QRIS statis) atau kredensial
+Tripay/Midtrans/Xendit/Duitku; jika belum ada, set
+`FEATURE_WIFI_CAPTIVE_PORTAL=false` dan `FEATURE_PPOE_QRIS_UNIQUE=false` agar
+aplikasi tetap bisa boot.
+
 Generate secret di Linux/macOS (PowerShell: gunakan generator acak pilihan Anda):
 
 ```bash
@@ -102,6 +108,11 @@ Dengan Cloudflare Tunnel:
 # Isi CLOUDFLARE_TUNNEL_TOKEN di .env terlebih dahulu.
 docker compose --profile tunnel up -d --build
 ```
+
+> **Lab tanpa TLS:** `ALLOW_HTTP_IN_PRODUCTION=true` hanya untuk lab/testing
+> dengan `APP_URL=http://...` saat `APP_ENV=production`. Untuk produksi nyata,
+> biarkan `false`, pasang TLS di depan aplikasi (Cloudflare Tunnel/nginx), dan
+> gunakan `APP_URL=https://...`.
 
 ### Development lokal (tanpa Docker)
 
@@ -160,6 +171,7 @@ Variabel penting:
 |---|---|---|
 | `APP_ENV` | `production` | `production` mewajibkan HTTPS dan secret kuat. |
 | `APP_URL` | `http://localhost:8080` | URL publik; dipakai untuk callback gateway dan QR. |
+| `ALLOW_HTTP_IN_PRODUCTION` | `false` | Khusus lab/testing: izinkan `APP_URL=http://...` saat `APP_ENV=production`. Jangan dipakai di produksi nyata. |
 | `DB_PATH` | `var/billas.db` | Di Docker: `/data/billas.db`. |
 | `AUTO_MIGRATE` | `0` | `1` menjalankan migrasi saat boot. |
 | `AUTO_SEED` | `0` | `1` mengisi admin/settings saat boot. |
@@ -232,8 +244,10 @@ WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=false
 
 - Flag juga dapat diubah dari **Admin → Pengaturan** setelah seed pertama.
 - `Env::validate()` menolak boot bila simulator aktif di production tanpa
-  `WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=true`, bila mode tidak valid, atau bila
-  mode `sign` dipilih sementara secret gateway yang didukung belum lengkap.
+  `WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=true` atau bila mode tidak valid.
+- Mode `sign` tanpa secret gateway yang didukung tetap boleh boot, tetapi
+  menghasilkan warning; dispatch `sign` akan gagal sampai gateway dikonfigurasi.
+  Gunakan mode `bypass` untuk QRIS statis yang tidak memiliki signature webhook.
 
 ### Mode
 
@@ -550,14 +564,17 @@ var/                 DB lokal, backup, PID server dev
   `hash_equals`.
 - Password router dienkripsi AES-256-GCM; password pelanggan di-hash bcrypt.
 - Query memakai prepared statement; output di-escape dengan `e()`.
-- Production wajib `APP_DEBUG=false`, `APP_URL=https://...`, dan secret ≥16
-  karakter. Jangan pernah commit `.env` atau file database.
+- Production wajib `APP_DEBUG=false`, `APP_URL=https://...` (kecuali lab dengan
+  `ALLOW_HTTP_IN_PRODUCTION=true`), dan secret ≥16 karakter. Jangan pernah
+  commit `.env` atau file database.
 
 ## Troubleshooting
 
 | Gejala | Periksa |
 |---|---|
 | `/ready` 503 | DB/schema belum dimigrasi, atau belum ada gateway terkonfigurasi. |
+| Boot gagal: `APP_URL production wajib https://` | Gunakan HTTPS, atau set `ALLOW_HTTP_IN_PRODUCTION=true` hanya untuk lab tanpa TLS. |
+| Boot gagal: `Fitur QRIS aktif tetapi tidak ada gateway` | Isi `QRIS_STATIC_PAYLOAD`/kredensial gateway, atau set `FEATURE_WIFI_CAPTIVE_PORTAL=false` dan `FEATURE_PPOE_QRIS_UNIQUE=false`. |
 | Admin tidak bisa login | `ADMIN_USERNAME`/`ADMIN_PASSWORD` hanya dipakai saat tabel `users` kosong. |
 | QR tidak muncul | Gateway belum dikonfigurasi atau `QRIS_STATIC_PAYLOAD` kosong di production. |
 | Webhook 401 | Signature/token gateway tidak cocok; cek secret dan raw body. |

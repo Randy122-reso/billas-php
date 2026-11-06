@@ -1,8 +1,8 @@
 {
   "name": "billas-php",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "private": true,
-  "description": "Billas v4.2 - hotspot voucher, PPPoE billing, QRIS unique guarantee, RTRWNET WiFi captive portal, and admin-only webhook simulator in pure PHP 8.3.",
+  "description": "Billas v4.3 - hotspot voucher, PPPoE billing, QRIS unique guarantee, RTRWNET WiFi captive portal, admin webhook simulator, and gateway API tester in pure PHP 8.3.",
   "license": "UNLICENSED",
   "engines": {
     "php": ">=8.3",

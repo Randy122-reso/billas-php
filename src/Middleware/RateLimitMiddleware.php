@@ -75,6 +75,9 @@ final class RateLimitMiddleware implements MiddlewareInterface
         if ($method === 'POST' && $path === '/admin/simulator/webhook') {
             return [['simulator_webhook_ip', 20]];
         }
+        if ($method === 'POST' && $path === '/admin/api-tester/send') {
+            return [['api_tester_send_ip', max(1, $this->settings->int('api_tester.rate_limit_per_min', 20))]];
+        }
         if ($method === 'POST' && $path === '/api/wifi/pay/create') {
             return [['wifi_pay_ip', max(1, $this->settings->int('wifi.rate_limit_create_per_ip', 5))]];
         }

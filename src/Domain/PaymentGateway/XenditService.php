@@ -157,4 +157,41 @@ final class XenditService extends BaseProvider
             ],
         ];
     }
+
+    public function getApiTesterBaseUrl(): string
+    {
+        return 'https://api.xendit.co/';
+    }
+
+    public function getApiTesterAllowedPaths(): array
+    {
+        return [
+            '#^qr_codes$#',
+            '#^qr_codes/[^/]+$#',
+            '#^v2/invoices$#',
+            '#^v2/invoices/[^/]+$#',
+            '#^v2/balance$#',
+            '#^callback_tokens$#',
+            '#^callback_tokens/[^/]+$#',
+        ];
+    }
+
+    public function getApiTesterHeaders(): array
+    {
+        $secretKey = $this->env->string('XENDIT_SECRET_KEY');
+
+        return [
+            'Authorization' => 'Basic ' . base64_encode($secretKey . ':'),
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+        ];
+    }
+
+    public function getApiTesterSecrets(): array
+    {
+        return array_values(array_filter([
+            $this->env->string('XENDIT_SECRET_KEY'),
+            $this->env->string('XENDIT_WEBHOOK_TOKEN'),
+        ], static fn (string $s): bool => $s !== ''));
+    }
 }

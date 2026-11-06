@@ -1,13 +1,12 @@
-# Billas v4.2 — Satu Billing, Semua Akses
+# Billas v4.3 — Satu Billing, Semua Akses
 
 Billing terpadu **Pure PHP 8.3 + Slim 4 + PDO SQLite** untuk hotspot voucher,
-PPPoE bulanan, QRIS unik per pelanggan, dan captive portal WiFi publik
-**RTRWNET**. Satu ingress, satu database, tiga container: `app`, `worker`, dan
-`cloudflared`.
+PPPoE bulanan, QRIS unik per pelanggan, captive portal WiFi publik
+**RTRWNET**, serta konsol pengujian gateway (Webhook Simulator + Gateway API Tester).
+Satu ingress, satu database, tiga container: `app`, `worker`, dan `cloudflared`.
 
-> Tahap awal ini sudah runnable end-to-end untuk alur utama: voucher hotspot,
-> invoice PPPoE, QRIS unik + garansi layanan, captive portal QRIS → password
-> WiFi, webhook multi-gateway, retry MikroTik, serta cron dari RouterOS.
+> Versi 4.3 menambahkan **Fitur G: Gateway API Tester** (outbound test console)
+> melengkapi Fitur F: Webhook Simulator (inbound simulator).
 > Riwayat perubahan ada di [`Changelog.md`](Changelog.md).
 
 ## Fitur
@@ -18,7 +17,8 @@ PPPoE bulanan, QRIS unik per pelanggan, dan captive portal WiFi publik
 | PPPoE | Invoice bulanan, isolir otomatis, reaktivasi setelah bayar, push MikroTik lewat worker. |
 | **Fitur D** | **QRIS unik per pelanggan PPPoE** + `service_guaranteed_until`; cron isolir menghormati garansi. |
 | **Fitur E** | **Captive portal RTRWNET**: pengunjung pilih paket → bayar QRIS → dapat password WiFi unik. |
-| **Fitur F** | **Webhook Simulator admin-only** (flag-gated, default OFF): uji alur bayar tanpa menunggu gateway nyata. |
+| **Fitur F** | **Webhook Simulator admin-only** (inbound, flag-gated, default OFF): uji alur bayar tanpa menunggu gateway nyata. |
+| **Fitur G** | **Gateway API Tester admin-only** (outbound, flag-gated, default OFF): uji endpoint outbound payment gateway resmi langsung dari browser/CLI secara SSRF-safe dengan masking secret. |
 | Router | CRUD penuh termasuk hapus; router yang masih dipakai pelanggan, voucher, atau sesi captive ditolak agar tidak ada data yatim. |
 | Pembayaran | Tripay, Midtrans, Xendit, Duitku, QRIS statis; webhook terpadu dan idempotent. |
 | Operasional | Admin back-office, portal pelanggan, audit trail, retry queue, backup SQLite, health check. |
@@ -321,6 +321,50 @@ pelanggan untuk mengisi target secara otomatis.
    plaintext dan audit `simulator.dispatch` tercatat.
 6. Matikan kembali flag setelah pengujian.
 
+## Gateway API Tester (Fitur G)
+
+Gateway API Tester memungkinkan admin menguji endpoint outbound resmi dari gateway
+pembayaran (Tripay, Midtrans, Xendit, Duitku) langsung dari konsol admin tanpa
+perlu `curl` di terminal dan tanpa mengekspos kredensial API key.
+
+> **Peringatan Production:**
+> `FEATURE_API_TESTER=false` secara default. Jangan pernah mengaktifkan fitur ini
+> di environment `APP_ENV=production` kecuali `API_TESTER_ALLOW_PRODUCTION_REQUESTS=true`
+> diatur secara eksplisit. Aplikasi akan langsung **gagal boot (fail-fast)** jika
+> guard ini dilanggar.
+
+### Prinsip Keamanan & Desain
+
+- **SSRF-Safe by Construction**: Base URL gateway ditentukan secara strictly
+  dari konfigurasi provider (bukan dari input user). Endpoint wajib path relatif
+  dan wajib cocok dengan regex whitelist provider. URL absolut (`http://`, `https://`, `//`)
+  ditolak (HTTP 400).
+- **Secret Never Leaves Backend**: Header autentikasi (`Authorization: Basic`,
+  `Bearer`, dsb.) dibangun di server-side. Nilai rahasia tidak pernah dikirim ke browser.
+- **Masking Otomatis**: Header sensitif dan string kredensial (API key, server key,
+  webhook token, secret key) otomatis diganti `***MASKED***` pada response viewer
+  maupun saat disimpan di database `api_tester_runs`.
+- **Admin-Only & Rate Limited**: Memerlukan sesi admin valid, CSRF token, dan
+  rate limit 20 request/menit/IP.
+- **Audit Trail**: Setiap pengujian outbound dicatat ke tabel `audit_trail` dengan
+  aksi `api_tester.dispatch`.
+
+### Akses
+
+| Akses | Keterangan |
+|---|---|
+| `GET /admin/api-tester` | Antarmuka web (form kirim, hints whitelist, response viewer, riwayat 20 run). |
+| `POST /admin/api-tester/send` | Endpoint kirim request outbound ke provider (CSRF wajib, JSON/Form). |
+| `GET /admin/api-tester/runs` | Riwayat run dalam JSON (secret dan header sensitif ter-mask). |
+| `php bin/console api:tester <provider> <method> <endpoint> [--body=...]` | Jalur CLI untuk testing manual atau pipeline CI/UAT. |
+
+Contoh CLI:
+```bash
+php bin/console api:tester xendit GET v2/balance
+php bin/console api:tester xendit POST qr_codes --body='{"external_id":"t1","type":"DYNAMIC","callback_url":"https://example.com/cb"}'
+php bin/console api:tester midtrans POST v2/charge --body='{"payment_type":"qris","transaction_details":{"order_id":"T-1","gross_amount":10000}}'
+```
+
 ## Alur Utama
 
 ### A. Voucher hotspot
@@ -372,6 +416,7 @@ pelanggan untuk mengisi target secara otomatis.
 | Cron internal | `POST /internal/cron/run` |
 | Webhook | `POST /api/webhook/{provider}` |
 | Webhook Simulator (admin) | `/admin/simulator` |
+| Gateway API Tester (admin) | `/admin/api-tester` |
 
 ## RouterOS
 
@@ -453,6 +498,7 @@ php bin/console cron:run --tasks=vouchers,order_expire
 php bin/console qris:create <id> [gateway]
 php bin/console qris:create --all [gateway]
 php bin/console simulate:webhook <target> <id> --provider=tripay --event=PAID --mode=sign
+php bin/console api:tester <gw> <method> <endpoint> [--body=...]
 php bin/worker.php --once            # kuras retry queue sekali
 php bin/worker.php --health          # health probe worker
 php bin/cron.php --force             # trigger cron via CLI

@@ -5,6 +5,32 @@ Semua perubahan penting pada Billas dicatat di file ini.
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/)
 dan versi mengikuti [Semantic Versioning](https://semver.org/lang/id/).
 
+## [4.3.0] — 2026-11-07
+
+Rilis ini mengimplementasikan integrasi terpadu v4.3 yang menambahkan **Fitur G: Gateway API Tester** (The Injector), melengkapi Fitur F (Webhook Simulator) sehingga Billas memiliki konsol debug dua arah: inbound (simulasi webhook) dan outbound (injeksi request ke gateway resmi).
+
+### Added
+
+- **Fitur G — Gateway API Tester (Admin-only, default OFF)**:
+  - Antarmuka web `GET /admin/api-tester` dengan form pengujian outbound, hint regex whitelist per provider, response viewer interaktif (HTTP status badge, duration ms, masked headers, formatted JSON body), dan tabel riwayat 20 pengujian terakhir.
+  - Endpoint dispatch `POST /admin/api-tester/send` yang dilindungi lapis keamanan penuh: `AuthMiddleware`, `CsrfMiddleware`, `RateLimitMiddleware` (20 req/menit/IP), dan `ApiTesterFlagMiddleware`.
+  - Endpoint JSON `GET /admin/api-tester/runs` untuk memuat riwayat pengujian.
+  - **Keamanan SSRF-Safe by Construction**: base URL fixed per provider sesuai mode (sandbox vs production), path relatif wajib cocok dengan whitelist regex provider, penolakan URL absolut (`http://`, `https://`, `//`), larangan redirect (`allow_redirects=false`), timeout cap (10s), dan body size cap (64 KB).
+  - **Secret Masking Otomatis**: header sensitif (`Authorization`, `Xendit-Api-Key`, `X-Callback-Signature`, dll.) dan string secret gateway dari `getApiTesterSecrets()` otomatis di-mask menjadi `***MASKED***` di UI dan tabel `api_tester_runs`.
+  - **Audit Trail**: setiap pengiriman request outbound diaudit ke `audit_trail` dengan aksi `api_tester.dispatch`.
+  - **CLI Support**: subcommand `bin/console api:tester <provider> <method> <endpoint> [--body=...]` untuk kemudahan pengujian dari terminal atau CI/CD.
+  - **Provider Implementation**: implementasi 4 method API tester (`getApiTesterBaseUrl`, `getApiTesterAllowedPaths`, `getApiTesterHeaders`, `getApiTesterSecrets`) pada `BaseProvider`, `TripayService`, `MidtransService`, `XenditService`, `DuitkuService`, dan penanganan `LogicException` jelas pada `QrisStaticService`.
+  - **Migrasi Idempotent**: file migrasi `007_v4_3_api_tester.php` untuk membuat tabel `api_tester_runs` beserta index provider & created_at, serta seeding default settings `features.api_tester`, `api_tester.mode`, `api_tester.timeout_seconds`, dan `api_tester.max_body_bytes`.
+  - **UI Admin Integration**: menu navigasi "API Tester" di sidebar admin (hanya muncul saat flag aktif), dan kartu konfigurasi Gateway API Tester di halaman Admin → Pengaturan.
+  - Test suite lengkap Unit (`tests/Unit/DebugApiServiceTest.php`) dan Integration (`tests/Integration/ApiTesterTest.php`).
+
+### Security
+
+- **Production Fail-Fast Guard**: `Env::validate()` langsung menolak booting aplikasi di environment production jika `FEATURE_API_TESTER=true` tanpa persetujuan eksplisit `API_TESTER_ALLOW_PRODUCTION_REQUESTS=true`.
+- Whitelist method ketat (hanya `GET,POST,DELETE`).
+
+---
+
 ## [4.2.0] — 2026-11-06
 
 Rilis ini menutup celah *silent failure* antara form Admin, tabel `settings`,
@@ -48,38 +74,3 @@ dan environment, melengkapi CRUD router, serta menyelaraskan versi aplikasi.
 
 - README diperbarui: prioritas DB-first, cara kerja simpan settings, tombol
   hapus router, troubleshooting baru, dan ringkasan test.
-- Footer admin menampilkan `Billas v4.2`.
-- Ditambahkan `package.json` berisi metadata versi dan shortcut script PHP.
-
-### Security
-
-- Form hapus router tetap mewajibkan CSRF; request tanpa token menghasilkan
-  HTTP 419 dan tidak menghapus data.
-- Guard referensi mencegah penghapusan router yang masih dipakai sehingga
-  integritas data pelanggan, voucher, dan sesi captive terjaga.
-
-### Verification
-
-- PHPUnit: **84 test, 340 assertion** — seluruhnya lulus.
-- PHP lint: **134 file** tanpa error.
-- Smoke test HTTP: halaman publik, portal pelanggan, seluruh halaman admin,
-  settings save dengan nama field bertitik asli, tambah/hapus router, dan
-  penolakan hapus router yang direferensikan.
-- Smoke test CLI: `migrate --seed`, `status`, `cron:run --force`,
-  `worker --once`, dan `worker --health`.
-- Migrasi `006_fix_settings` diuji pada database kosong dan database lama;
-  nilai settings yang sudah ada tidak tertimpa.
-
-## [4.0.0]
-
-Baseline fitur yang sudah tersedia sebelum rilis 4.2.0:
-
-- Hotspot voucher dengan masa aktif uptime dan kalender.
-- Billing PPPoE bulanan, isolir otomatis, dan reaktivasi setelah pembayaran.
-- QRIS unik per pelanggan PPPoE dengan `service_guaranteed_until`.
-- Captive portal WiFi RTRWNET: QRIS → password unik.
-- Webhook multi-gateway (Tripay, Midtrans, Xendit, Duitku, QRIS statis) yang
-  idempotent.
-- Admin back-office, portal pelanggan, audit trail, retry queue, backup SQLite,
-  health check `/health` dan `/ready`.
-- Cron HTTP `POST /internal/cron/run` yang dipicu RouterOS Scheduler.

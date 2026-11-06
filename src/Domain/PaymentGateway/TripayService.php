@@ -151,4 +151,42 @@ final class TripayService extends BaseProvider
     {
         throw new RuntimeException('Tripay tidak mendukung akun pembayaran persisten.');
     }
+
+    public function getApiTesterBaseUrl(): string
+    {
+        $mode = $this->env->string('API_TESTER_MODE', $this->env->string('TRIPAY_MODE', 'sandbox'));
+
+        return $mode === 'production'
+            ? 'https://tripay.co.id/api/'
+            : 'https://tripay.co.id/api-sandbox/';
+    }
+
+    public function getApiTesterAllowedPaths(): array
+    {
+        return [
+            '#^transaction/create$#',
+            '#^transaction/detail$#',
+            '#^merchant/payment-channel$#',
+            '#^merchant/fee-calculator$#',
+        ];
+    }
+
+    public function getApiTesterHeaders(): array
+    {
+        $apiKey = $this->env->string('TRIPAY_API_KEY');
+
+        return [
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+        ];
+    }
+
+    public function getApiTesterSecrets(): array
+    {
+        return array_values(array_filter([
+            $this->env->string('TRIPAY_API_KEY'),
+            $this->env->string('TRIPAY_PRIVATE_KEY'),
+        ], static fn (string $s): bool => $s !== ''));
+    }
 }

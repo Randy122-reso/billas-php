@@ -113,6 +113,14 @@ final class Env
             'WEBHOOK_SIMULATOR_MODE' => 'sign',
             'WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION' => 'false',
 
+            'FEATURE_API_TESTER' => 'false',
+            'API_TESTER_MODE' => 'sandbox',
+            'API_TESTER_ALLOW_PRODUCTION_REQUESTS' => 'false',
+            'API_TESTER_TIMEOUT_SECONDS' => '10',
+            'API_TESTER_MAX_BODY_BYTES' => '65536',
+            'API_TESTER_RATE_LIMIT_PER_MIN' => '20',
+            'API_TESTER_ALLOWED_METHODS' => 'GET,POST,DELETE',
+
             'PPPOE_QRIS_UNIQUE_AUTO_CREATE' => 'true',
             'PPPOE_QRIS_UNIQUE_PROVIDERS' => 'midtrans,xendit,duitku',
             'PPPOE_SERVICE_GUARANTEE_DAYS' => '0',
@@ -370,6 +378,43 @@ final class Env
             && $this->configuredWebhookSigningProviders() === []) {
             $this->warnings[] = 'Mode sign tanpa gateway signing terkonfigurasi; simulasi sign akan gagal saat dispatch. '
                 . 'Gunakan WEBHOOK_SIMULATOR_MODE=bypass atau isi secret gateway.';
+        }
+
+        // (v4.3) Fitur G: production guard
+        if ($this->isProduction()
+            && $this->bool('FEATURE_API_TESTER')
+            && !$this->bool('API_TESTER_ALLOW_PRODUCTION_REQUESTS')) {
+            throw new RuntimeException(
+                'FEATURE_API_TESTER=true tidak diizinkan di production. '
+                . 'Set API_TESTER_ALLOW_PRODUCTION_REQUESTS=true jika ini disengaja.'
+            );
+        }
+
+        // (v4.3) Mode API tester harus valid
+        $apiTesterMode = strtolower(trim($this->string('API_TESTER_MODE', 'sandbox')));
+        if (!in_array($apiTesterMode, ['sandbox', 'production'], true)) {
+            throw new RuntimeException('API_TESTER_MODE harus sandbox|production.');
+        }
+
+        // (v4.3) Method whitelist harus subset dari {GET,POST,DELETE}
+        $rawAllowedMethods = $this->string('API_TESTER_ALLOWED_METHODS', 'GET,POST,DELETE');
+        $allowedMethods = array_filter(array_map('trim', explode(',', strtoupper($rawAllowedMethods))));
+        $invalidMethods = array_diff($allowedMethods, ['GET', 'POST', 'DELETE']);
+        if (!empty($invalidMethods)) {
+            throw new RuntimeException(
+                'API_TESTER_ALLOWED_METHODS hanya boleh berisi GET,POST,DELETE. Ditemukan: '
+                . implode(',', $invalidMethods)
+            );
+        }
+
+        // (v4.3) Timeout & body cap harus positif
+        $timeout = $this->int('API_TESTER_TIMEOUT_SECONDS', 10);
+        if ($timeout < 1 || $timeout > 60) {
+            throw new RuntimeException('API_TESTER_TIMEOUT_SECONDS harus 1..60.');
+        }
+        $maxBody = $this->int('API_TESTER_MAX_BODY_BYTES', 65536);
+        if ($maxBody < 1 || $maxBody > 1048576) {
+            throw new RuntimeException('API_TESTER_MAX_BODY_BYTES harus 1..1048576.');
         }
 
         if ($this->bool('FEATURE_WIFI_CAPTIVE_PORTAL')) {

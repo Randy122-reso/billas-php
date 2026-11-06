@@ -82,6 +82,13 @@ final class Seeder
             'payment.order_ttl' => (string) $this->env->int('PAYMENT_ORDER_TTL', 900),
             'webhook_simulator.mode' => $this->env->string('WEBHOOK_SIMULATOR_MODE', 'sign'),
             'webhook_simulator.allow_in_production' => $this->env->bool('WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION', false) ? '1' : '0',
+            'features.api_tester' => $this->env->bool('FEATURE_API_TESTER', false) ? '1' : '0',
+            'api_tester.mode' => $this->env->string('API_TESTER_MODE', 'sandbox'),
+            'api_tester.allow_production_requests' => $this->env->bool('API_TESTER_ALLOW_PRODUCTION_REQUESTS', false) ? '1' : '0',
+            'api_tester.timeout_seconds' => (string) $this->env->int('API_TESTER_TIMEOUT_SECONDS', 10),
+            'api_tester.max_body_bytes' => (string) $this->env->int('API_TESTER_MAX_BODY_BYTES', 65536),
+            'api_tester.rate_limit_per_min' => (string) $this->env->int('API_TESTER_RATE_LIMIT_PER_MIN', 20),
+            'api_tester.allowed_methods' => $this->env->string('API_TESTER_ALLOWED_METHODS', 'GET,POST,DELETE'),
         ];
 
         $stmt = $this->db->prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

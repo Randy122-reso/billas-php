@@ -24,6 +24,7 @@ $featureLabels = [
     'pppoe_qris_unique' => ['QRIS unik PPPoE', 'Satu QRIS per pelanggan dengan garansi layanan.'],
     'wifi_captive_portal' => ['Captive portal WiFi', 'SSID RTRWNET → QRIS → password unik.'],
     'webhook_simulator' => ['Webhook Simulator', 'Alat admin untuk mengirim webhook sintetis. Default OFF.'],
+    'api_tester' => ['Gateway API Tester', 'Alat admin untuk menguji outbound endpoint payment gateway. Default OFF.'],
 ];
 ?>
 <div class="page-head">
@@ -152,6 +153,9 @@ $featureLabels = [
     $simulatorEnabled = !empty($features['webhook_simulator']);
     $simulatorMode = $value('webhook_simulator.mode', 'sign');
     $simulatorAllow = $checked('webhook_simulator.allow_in_production', false);
+    $apiTesterEnabled = !empty($features['api_tester']);
+    $apiTesterMode = $value('api_tester.mode', 'sandbox');
+    $apiTesterAllow = $checked('api_tester.allow_production_requests', false);
     ?>
     <section class="card">
         <div class="card-head">
@@ -180,6 +184,38 @@ $featureLabels = [
                 </div>
                 <?php if ($simulatorEnabled): ?>
                     <a class="btn btn-primary btn-sm" href="<?= e(billas_url('/admin/simulator')) ?>">Buka simulator →</a>
+                <?php endif; ?>
+            </div>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="card-head">
+            <h2>Gateway API Tester</h2>
+            <span class="badge badge-<?= e($apiTesterEnabled ? 'success' : 'muted') ?>"><?= $apiTesterEnabled ? 'aktif' : 'nonaktif' ?></span>
+        </div>
+        <div class="content-grid">
+            <div class="form-grid two">
+                <label class="field">
+                    <span>Mode API Tester</span>
+                    <select name="api_tester.mode">
+                        <option value="sandbox" <?= $apiTesterMode === 'sandbox' ? 'selected' : '' ?>>sandbox — endpoint sandbox provider</option>
+                        <option value="production" <?= $apiTesterMode === 'production' ? 'selected' : '' ?>>production — endpoint production provider</option>
+                    </select>
+                    <small class="hint">Menentukan base URL gateway yang diinjeksi.</small>
+                </label>
+                <label class="checkbox-field">
+                    <input type="checkbox" name="api_tester.allow_production_requests" value="1" <?= $apiTesterAllow ? 'checked' : '' ?>>
+                    <span>Izinkan di production (wajib saat <span class="mono">APP_ENV=production</span>)</span>
+                </label>
+            </div>
+            <div>
+                <div class="notice notice-warning small">
+                    API Tester adalah konsol outbound admin-only untuk pengujian gateway. Masking secret aktif otomatis.
+                    Saat production, flag ini wajib disertai izin eksplisit di atas.
+                </div>
+                <?php if ($apiTesterEnabled): ?>
+                    <a class="btn btn-primary btn-sm" href="<?= e(billas_url('/admin/api-tester')) ?>">Buka API Tester →</a>
                 <?php endif; ?>
             </div>
         </div>

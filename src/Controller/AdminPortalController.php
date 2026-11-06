@@ -546,6 +546,13 @@ final class AdminPortalController extends AbstractController
             'features.webhook_simulator',
             'webhook_simulator.mode',
             'webhook_simulator.allow_in_production',
+            'features.api_tester',
+            'api_tester.mode',
+            'api_tester.allow_production_requests',
+            'api_tester.timeout_seconds',
+            'api_tester.max_body_bytes',
+            'api_tester.rate_limit_per_min',
+            'api_tester.allowed_methods',
             'pppoe_qris.auto_create',
             'pppoe_qris.providers',
             'pppoe_qris.guarantee_days',
@@ -566,7 +573,7 @@ final class AdminPortalController extends AbstractController
             'payment.order_ttl',
         ];
         $values = [];
-        $booleanKeys = ['pppoe_qris.auto_create', 'webhook_simulator.allow_in_production'];
+        $booleanKeys = ['pppoe_qris.auto_create', 'webhook_simulator.allow_in_production', 'api_tester.allow_production_requests'];
         foreach ($keys as $key) {
             $value = $this->postSetting($request, $key);
             if (str_starts_with($key, 'features.') || in_array($key, $booleanKeys, true)) {

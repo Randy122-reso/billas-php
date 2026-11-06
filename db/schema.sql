@@ -299,3 +299,24 @@ CREATE INDEX IF NOT EXISTS idx_simulator_runs_target
   ON simulator_runs(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_simulator_runs_created
   ON simulator_runs(created_at);
+
+-- ============================================================
+-- v4.3 — Fitur G: Gateway API Tester (#v4.3)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS api_tester_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT NOT NULL CHECK (provider IN ('tripay','midtrans','xendit','duitku','qris_static')),
+  method TEXT NOT NULL CHECK (method IN ('GET','POST','DELETE')),
+  endpoint TEXT NOT NULL,
+  request_body TEXT,          -- sudah di-mask sebelum disimpan
+  response_status INTEGER,
+  response_body TEXT,         -- sudah di-mask sebelum disimpan
+  duration_ms INTEGER,
+  error TEXT,                 -- pesan error (jika ada); di-mask
+  created_by INTEGER REFERENCES users(id),
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_api_tester_runs_provider
+  ON api_tester_runs(provider);
+CREATE INDEX IF NOT EXISTS idx_api_tester_runs_created
+  ON api_tester_runs(created_at);

@@ -141,6 +141,16 @@ final class Routes
                 $c->get(\Billas\Support\Settings::class),
                 $c->get(\Billas\Support\Env::class)
             ));
+
+            $apiTester = $group->group('/api-tester', function (RouteCollectorProxy $apiTester): void {
+                $apiTester->get('', $this->call(\Billas\Controller\ApiTesterController::class, 'index'));
+                $apiTester->post('/send', $this->call(\Billas\Controller\ApiTesterController::class, 'send'));
+                $apiTester->get('/runs', $this->call(\Billas\Controller\ApiTesterController::class, 'runs'));
+            });
+            $apiTester->add(new \Billas\Middleware\ApiTesterFlagMiddleware(
+                $c->get(\Billas\Support\Settings::class),
+                $c->get(\Billas\Support\Env::class)
+            ));
         });
 
         $admin->add(new AuthMiddleware($c->get(Session::class), 'admin'));

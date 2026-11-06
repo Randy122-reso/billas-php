@@ -47,6 +47,7 @@ Billas v4 console
   qris:create <id> [gateway]       Create/reuse a customer's unique QRIS
   qris:create --all [gateway]      Backfill unique QRIS for active PPPoE customers
   simulate:webhook <target> <id>   Dispatch a synthetic webhook (order|invoice|persistent_account)
+  api:tester <gw> <m> <endpoint>   Test an outbound gateway API endpoint (GET|POST|DELETE)
   status                           Show DB, migration, queue and job status
   help                             This help
 
@@ -55,6 +56,8 @@ Examples:
   php bin/console cron:run --force --tasks=vouchers,order_expire
   php bin/console qris:create 12 midtrans
   php bin/console simulate:webhook order <uuid> --provider=tripay --event=PAID --mode=sign
+  php bin/console api:tester xendit GET v2/balance
+  php bin/console api:tester xendit POST qr_codes --body='{"external_id":"t1","type":"DYNAMIC","callback_url":"https://test"}'
 
 TXT;
 }
@@ -237,6 +240,36 @@ try {
                 'external_ref' => $account['external_ref'],
                 'qr_string' => $account['qr_string'],
             ]]);
+            break;
+
+        case 'api:tester':
+            $provider = isset($positional[0]) ? (string) $positional[0] : '';
+            $method = isset($positional[1]) ? (string) $positional[1] : 'GET';
+            $endpoint = isset($positional[2]) ? (string) $positional[2] : '';
+            $body = isset($options['body']) ? (string) $options['body'] : null;
+
+            if ($provider === '' || $endpoint === '') {
+                fwrite(STDERR, 'api:tester membutuhkan provider, method, dan endpoint.' . PHP_EOL);
+                fwrite(STDERR, 'Contoh: php bin/console api:tester xendit GET v2/balance' . PHP_EOL);
+                exit(2);
+            }
+
+            /** @var \Billas\Support\Settings $settings */
+            $settings = $services['container']->get(\Billas\Support\Settings::class);
+            $debugService = new \Billas\Domain\DebugApiService(
+                $db,
+                $services['container']->get(\Billas\Domain\PaymentGateway\GatewayFactory::class),
+                $services['container']->get(\Billas\Domain\AuditService::class),
+                [
+                    'api_tester_allowed_methods' => $settings->get('api_tester.allowed_methods', $services['env']->string('API_TESTER_ALLOWED_METHODS', 'GET,POST,DELETE')),
+                    'api_tester_timeout_seconds' => (int) $settings->get('api_tester.timeout_seconds', (string) $services['env']->int('API_TESTER_TIMEOUT_SECONDS', 10)),
+                    'api_tester_max_body_bytes' => (int) $settings->get('api_tester.max_body_bytes', (string) $services['env']->int('API_TESTER_MAX_BODY_BYTES', 65536)),
+                ],
+                null
+            );
+
+            $res = $debugService->send($provider, $method, $endpoint, $body);
+            billas_json($res);
             break;
 
         case 'status':

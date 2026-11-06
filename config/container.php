@@ -37,7 +37,7 @@ $sessionHandler = new SqliteSessionHandler($db, 86400);
 
 $builder->addDefinitions([
     'app.root' => $root,
-    'app.version' => $env->string('APP_VERSION', '4.2.0'),
+    'app.version' => $env->string('APP_VERSION', '4.3.0'),
     Env::class => $env,
     PDO::class => $db,
     LoggerInterface::class => $logger,

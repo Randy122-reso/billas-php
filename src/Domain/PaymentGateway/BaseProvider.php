@@ -167,4 +167,43 @@ abstract class BaseProvider implements PaymentProvider
     {
         return json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';
     }
+
+    /**
+     * Fitur G (v4.3): base URL for the API Tester.
+     */
+    public function getApiTesterBaseUrl(): string
+    {
+        throw new \LogicException(static::class . ' tidak mendukung API tester.');
+    }
+
+    /**
+     * Fitur G (v4.3): regex patterns for relative paths allowed in API Tester.
+     * Empty = none allowed.
+     *
+     * @return list<string>
+     */
+    public function getApiTesterAllowedPaths(): array
+    {
+        return [];
+    }
+
+    /**
+     * Fitur G (v4.3): auth headers built server-side.
+     *
+     * @return array<string,string>
+     */
+    public function getApiTesterHeaders(): array
+    {
+        return [];
+    }
+
+    /**
+     * Fitur G (v4.3): secret strings to mask in request/response body.
+     *
+     * @return list<string>
+     */
+    public function getApiTesterSecrets(): array
+    {
+        return [];
+    }
 }

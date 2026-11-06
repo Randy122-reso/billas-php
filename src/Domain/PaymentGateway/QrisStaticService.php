@@ -151,4 +151,9 @@ final class QrisStaticService extends BaseProvider
 
         return [$amount === null ? QrisUtil::withoutAmount($payload) : QrisUtil::withAmount($payload, $amount), $demo];
     }
+
+    public function getApiTesterBaseUrl(): string
+    {
+        throw new \LogicException('QRIS statis tidak mendukung API tester.');
+    }
 }

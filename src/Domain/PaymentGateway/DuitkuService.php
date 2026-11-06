@@ -160,4 +160,38 @@ final class DuitkuService extends BaseProvider
             'kind' => 'auto',
         ];
     }
+
+    public function getApiTesterBaseUrl(): string
+    {
+        $mode = $this->env->string('API_TESTER_MODE', $this->env->string('DUITKU_MODE', 'sandbox'));
+
+        return $mode === 'production'
+            ? 'https://passport.duitku.com/webapi/api/'
+            : 'https://sandbox.duitku.com/webapi/api/';
+    }
+
+    public function getApiTesterAllowedPaths(): array
+    {
+        return [
+            '#^merchant/createInvoice$#',
+            '#^merchant/transactionStatus$#',
+            '#^merchant/paymentmethod/getpaymentmethod$#',
+        ];
+    }
+
+    public function getApiTesterHeaders(): array
+    {
+        return [
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+        ];
+    }
+
+    public function getApiTesterSecrets(): array
+    {
+        return array_values(array_filter([
+            $this->env->string('DUITKU_API_KEY'),
+            $this->env->string('DUITKU_MERCHANT_CODE'),
+        ], static fn (string $s): bool => $s !== ''));
+    }
 }

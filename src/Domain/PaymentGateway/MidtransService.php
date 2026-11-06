@@ -154,4 +154,42 @@ final class MidtransService extends BaseProvider
             'body_format' => 'json',
         ];
     }
+
+    public function getApiTesterBaseUrl(): string
+    {
+        $mode = $this->env->string('API_TESTER_MODE', $this->env->string('MIDTRANS_MODE', 'sandbox'));
+
+        return $mode === 'production'
+            ? 'https://api.midtrans.com/'
+            : 'https://api.sandbox.midtrans.com/';
+    }
+
+    public function getApiTesterAllowedPaths(): array
+    {
+        return [
+            '#^v2/[^/]+/charge$#',
+            '#^v2/[^/]+/status$#',
+            '#^v2/[^/]+/cancel$#',
+            '#^v2/[^/]+/expire$#',
+        ];
+    }
+
+    public function getApiTesterHeaders(): array
+    {
+        $serverKey = $this->env->string('MIDTRANS_SERVER_KEY');
+
+        return [
+            'Authorization' => 'Basic ' . base64_encode($serverKey . ':'),
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+        ];
+    }
+
+    public function getApiTesterSecrets(): array
+    {
+        return array_values(array_filter([
+            $this->env->string('MIDTRANS_SERVER_KEY'),
+            $this->env->string('MIDTRANS_CLIENT_KEY'),
+        ], static fn (string $s): bool => $s !== ''));
+    }
 }

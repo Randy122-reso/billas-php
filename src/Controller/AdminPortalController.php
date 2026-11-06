@@ -320,6 +320,24 @@ final class AdminPortalController extends AbstractController
         return $this->redirect('/admin/routers');
     }
 
+    public function routerDelete(ServerRequestInterface $request, ResponseInterface $response, array $args = []): ResponseInterface
+    {
+        $id = (int) ($args['id'] ?? 0);
+        try {
+            $router = $this->routers->find($id);
+            $this->routers->delete($id);
+            $this->audit->record('admin', $this->adminActor(), 'router.deleted', 'router', (string) $id, [
+                'name' => $router['name'] ?? null,
+                'host' => $router['host'] ?? null,
+            ]);
+            $this->session->flash('success', 'Router dihapus.');
+        } catch (Throwable $e) {
+            $this->session->flash('error', 'Router gagal dihapus: ' . $e->getMessage());
+        }
+
+        return $this->redirect('/admin/routers');
+    }
+
     public function routerTest(ServerRequestInterface $request, ResponseInterface $response, array $args = []): ResponseInterface
     {
         try {
@@ -503,7 +521,7 @@ final class AdminPortalController extends AbstractController
     {
         $settings = $this->settings->all();
         $features = [];
-        foreach (['hotspot_calendar_expiry', 'persistent_account', 'subscription_paid_until', 'pppoe_qris_unique', 'wifi_captive_portal'] as $name) {
+        foreach (['hotspot_calendar_expiry', 'persistent_account', 'subscription_paid_until', 'pppoe_qris_unique', 'wifi_captive_portal', 'webhook_simulator'] as $name) {
             $features[$name] = $this->settings->feature($name);
         }
 
@@ -525,6 +543,9 @@ final class AdminPortalController extends AbstractController
             'features.subscription_paid_until',
             'features.pppoe_qris_unique',
             'features.wifi_captive_portal',
+            'features.webhook_simulator',
+            'webhook_simulator.mode',
+            'webhook_simulator.allow_in_production',
             'pppoe_qris.auto_create',
             'pppoe_qris.providers',
             'pppoe_qris.guarantee_days',
@@ -545,9 +566,10 @@ final class AdminPortalController extends AbstractController
             'payment.order_ttl',
         ];
         $values = [];
+        $booleanKeys = ['pppoe_qris.auto_create', 'webhook_simulator.allow_in_production'];
         foreach ($keys as $key) {
-            $value = $this->postString($request, $key);
-            if (str_starts_with($key, 'features.')) {
+            $value = $this->postSetting($request, $key);
+            if (str_starts_with($key, 'features.') || in_array($key, $booleanKeys, true)) {
                 $value = $value !== '' ? '1' : '0';
             }
             $values[$key] = $value;

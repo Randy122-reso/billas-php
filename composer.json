@@ -1,6 +1,6 @@
 {
     "name": "billas/billas-php",
-    "description": "Billas v4 - hotspot voucher, PPPoE billing, QRIS unique guarantee, and RTRWNET WiFi captive portal in pure PHP.",
+    "description": "Billas v4.2 - hotspot voucher, PPPoE billing, QRIS unique guarantee, RTRWNET WiFi captive portal, and admin-only webhook simulator in pure PHP.",
     "type": "project",
     "license": "proprietary",
     "require": {

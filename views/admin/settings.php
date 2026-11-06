@@ -23,6 +23,7 @@ $featureLabels = [
     'subscription_paid_until' => ['Validitas langganan eksplisit', 'Gunakan paid_until untuk masa aktif PPPoE.'],
     'pppoe_qris_unique' => ['QRIS unik PPPoE', 'Satu QRIS per pelanggan dengan garansi layanan.'],
     'wifi_captive_portal' => ['Captive portal WiFi', 'SSID RTRWNET → QRIS → password unik.'],
+    'webhook_simulator' => ['Webhook Simulator', 'Alat admin untuk mengirim webhook sintetis. Default OFF.'],
 ];
 ?>
 <div class="page-head">
@@ -148,7 +149,7 @@ $featureLabels = [
     </section>
 
     <?php
-    $simulatorEnabled = billas_feature('webhook_simulator');
+    $simulatorEnabled = !empty($features['webhook_simulator']);
     $simulatorMode = $value('webhook_simulator.mode', 'sign');
     $simulatorAllow = $checked('webhook_simulator.allow_in_production', false);
     ?>
@@ -158,14 +159,24 @@ $featureLabels = [
             <span class="badge badge-<?= e($simulatorEnabled ? 'success' : 'muted') ?>"><?= $simulatorEnabled ? 'aktif' : 'nonaktif' ?></span>
         </div>
         <div class="content-grid">
-            <dl class="summary-list compact">
-                <div><dt>Feature flag</dt><dd class="mono">FEATURE_WEBHOOK_SIMULATOR=<?= $simulatorEnabled ? 'true' : 'false' ?></dd></div>
-                <div><dt>Mode default</dt><dd><span class="mono"><?= e($simulatorMode) ?></span></dd></div>
-                <div><dt>Production allowed</dt><dd><span class="badge badge-<?= e($simulatorAllow ? 'warning' : 'success') ?>"><?= $simulatorAllow ? 'ya' : 'tidak' ?></span></dd></div>
-            </dl>
+            <div class="form-grid two">
+                <label class="field">
+                    <span>Mode default</span>
+                    <select name="webhook_simulator.mode">
+                        <option value="sign" <?= $simulatorMode === 'sign' ? 'selected' : '' ?>>sign — tanda tangan gateway</option>
+                        <option value="bypass" <?= $simulatorMode === 'bypass' ? 'selected' : '' ?>>bypass — lewati verifikasi signature</option>
+                    </select>
+                    <small class="hint">Mode bypass tetap mengirim header <span class="mono">X-Billas-Simulated: 1</span>.</small>
+                </label>
+                <label class="checkbox-field">
+                    <input type="checkbox" name="webhook_simulator.allow_in_production" value="1" <?= $simulatorAllow ? 'checked' : '' ?>>
+                    <span>Izinkan di production (wajib saat <span class="mono">APP_ENV=production</span>)</span>
+                </label>
+            </div>
             <div>
                 <div class="notice notice-warning small">
-                    Simulator adalah alat admin-only dan default OFF. Di production, flag ini wajib disertai <span class="mono">WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=true</span>; tanpa itu aplikasi menolak boot. Ubah nilai melalui <span class="mono">.env</span>.
+                    Simulator adalah alat admin-only. Aktifkan lewat toggle <strong>Webhook Simulator</strong> di bagian Fitur.
+                    Saat production, flag ini juga wajib disertai izin production di atas.
                 </div>
                 <?php if ($simulatorEnabled): ?>
                     <a class="btn btn-primary btn-sm" href="<?= e(billas_url('/admin/simulator')) ?>">Buka simulator →</a>

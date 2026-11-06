@@ -28,7 +28,7 @@ final class HealthController
     {
         return JsonResponse::ok([
             'service' => 'billas',
-            'version' => $this->env->string('APP_VERSION', '4.0.0'),
+            'version' => $this->env->string('APP_VERSION', '4.2.0'),
             'time' => Time::nowIso(),
         ]);
     }

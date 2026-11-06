@@ -107,6 +107,7 @@ final class Routes
 
             $group->get('/routers', $this->call(AdminPortalController::class, 'routers'));
             $group->post('/routers', $this->call(AdminPortalController::class, 'routersSave'));
+            $group->post('/routers/delete/{id}', $this->call(AdminPortalController::class, 'routerDelete'));
             $group->post('/routers/{id}/toggle', $this->call(AdminPortalController::class, 'routerToggle'));
             $group->post('/routers/{id}/test', $this->call(AdminPortalController::class, 'routerTest'));
 

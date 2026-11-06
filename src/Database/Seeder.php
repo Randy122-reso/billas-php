@@ -61,6 +61,7 @@ final class Seeder
             'features.subscription_paid_until' => $this->env->bool('FEATURE_SUBSCRIPTION_PAID_UNTIL', true) ? '1' : '0',
             'features.pppoe_qris_unique' => $this->env->bool('FEATURE_PPOE_QRIS_UNIQUE', true) ? '1' : '0',
             'features.wifi_captive_portal' => $this->env->bool('FEATURE_WIFI_CAPTIVE_PORTAL', true) ? '1' : '0',
+            'features.webhook_simulator' => $this->env->bool('FEATURE_WEBHOOK_SIMULATOR', false) ? '1' : '0',
             'pppoe_qris.auto_create' => $this->env->bool('PPPOE_QRIS_UNIQUE_AUTO_CREATE', true) ? '1' : '0',
             'pppoe_qris.providers' => $this->env->string('PPPOE_QRIS_UNIQUE_PROVIDERS', 'midtrans,xendit,duitku'),
             'pppoe_qris.guarantee_days' => (string) $this->env->int('PPPOE_SERVICE_GUARANTEE_DAYS'),

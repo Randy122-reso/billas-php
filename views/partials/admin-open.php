@@ -47,7 +47,7 @@ if (billas_feature('webhook_simulator')) {
             <?php endforeach; ?>
         </nav>
         <div class="sidebar-foot">
-            <span class="muted small">Billas v4 · PHP <?= e(PHP_VERSION) ?></span>
+            <span class="muted small">Billas v4.2 · PHP <?= e(PHP_VERSION) ?></span>
             <a href="<?= e(billas_url('/')) ?>" class="small">Lihat portal publik →</a>
         </div>
     </aside>

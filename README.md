@@ -1,4 +1,4 @@
-# Billas v4 — Satu Billing, Semua Akses
+# Billas v4.2 — Satu Billing, Semua Akses
 
 Billing terpadu **Pure PHP 8.3 + Slim 4 + PDO SQLite** untuk hotspot voucher,
 PPPoE bulanan, QRIS unik per pelanggan, dan captive portal WiFi publik
@@ -8,6 +8,7 @@ PPPoE bulanan, QRIS unik per pelanggan, dan captive portal WiFi publik
 > Tahap awal ini sudah runnable end-to-end untuk alur utama: voucher hotspot,
 > invoice PPPoE, QRIS unik + garansi layanan, captive portal QRIS → password
 > WiFi, webhook multi-gateway, retry MikroTik, serta cron dari RouterOS.
+> Riwayat perubahan ada di [`Changelog.md`](Changelog.md).
 
 ## Fitur
 
@@ -18,6 +19,7 @@ PPPoE bulanan, QRIS unik per pelanggan, dan captive portal WiFi publik
 | **Fitur D** | **QRIS unik per pelanggan PPPoE** + `service_guaranteed_until`; cron isolir menghormati garansi. |
 | **Fitur E** | **Captive portal RTRWNET**: pengunjung pilih paket → bayar QRIS → dapat password WiFi unik. |
 | **Fitur F** | **Webhook Simulator admin-only** (flag-gated, default OFF): uji alur bayar tanpa menunggu gateway nyata. |
+| Router | CRUD penuh termasuk hapus; router yang masih dipakai pelanggan, voucher, atau sesi captive ditolak agar tidak ada data yatim. |
 | Pembayaran | Tripay, Midtrans, Xendit, Duitku, QRIS statis; webhook terpadu dan idempotent. |
 | Operasional | Admin back-office, portal pelanggan, audit trail, retry queue, backup SQLite, health check. |
 | Cron | `POST /internal/cron/run`, idempotent lewat `job_state`, dipicu RouterOS Scheduler. |
@@ -157,13 +159,18 @@ Kredensial demo lokal:
 
 ## Konfigurasi
 
-Prioritas konfigurasi:
+Prioritas konfigurasi runtime:
 
-1. **Process environment** (Docker/CI) menang atas file `.env`.
-2. **`.env`** mengisi nilai awal.
-3. **Tabel `settings`** menyimpan pengaturan operasional. Setelah seed pertama,
-   nilai tertentu dapat diubah dari **Admin → Pengaturan** dan menjadi sumber
-   utama untuk fitur/payment/wifi. Nilai env tetap dipakai sebagai fallback.
+1. **Tabel `settings`** — sumber utama untuk fitur/payment/wifi setelah halaman
+   **Admin → Pengaturan** disimpan.
+2. **Process environment** (Docker/CI) — fallback dan nilai awal; menang atas
+   file `.env`.
+3. **`.env`** — mengisi nilai awal saat proses boot/seed.
+
+Form admin mengirim key bertitik (mis. `features.wifi_captive_portal`). PHP
+menormalisasi nama field menjadi garis bawah sebelum controller menerimanya;
+controller membaca kedua bentuk sehingga nilai benar-benar tersimpan ke
+database.
 
 Variabel penting:
 
@@ -242,7 +249,9 @@ WEBHOOK_SIMULATOR_MODE=sign
 WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=false
 ```
 
-- Flag juga dapat diubah dari **Admin → Pengaturan** setelah seed pertama.
+- Flag, mode default, dan izin production juga dapat diubah dari
+  **Admin → Pengaturan** setelah seed pertama. Nilai dari form admin disimpan
+  ke tabel `settings` dan langsung berlaku pada request berikutnya.
 - `Env::validate()` menolak boot bila simulator aktif di production tanpa
   `WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=true` atau bila mode tidak valid.
 - Mode `sign` tanpa secret gateway yang didukung tetap boleh boot, tetapi
@@ -422,6 +431,11 @@ Di `login.html` MikroTik, redirect dapat memakai:
 - Isi `MIKROTIK_HOST`, `MIKROTIK_PORT` (8728/8729), `MIKROTIK_USER`,
   `MIKROTIK_PASS`, dan `MIKROTIK_TLS` di `.env`, atau tambahkan router lewat
   **Admin → Router**.
+- Hapus router lewat tombol **Hapus** di **Admin → Router**
+  (`POST /admin/routers/delete/{id}`). Penghapusan ditolak bila router masih
+  direferensikan pelanggan, voucher, atau sesi captive; pesannya tampil sebagai
+  flash error. Setiap penghapusan sukses dicatat di `audit_trail` sebagai
+  `router.deleted`.
 - Password router dienkripsi AES-256-GCM dengan `ENCRYPTION_KEY`; jangan ganti
   key ini setelah ada data tanpa rencana re-enkripsi.
 - Untuk uji lokal, `MIKROTIK_FAKE=true` membuat push disimulasikan.
@@ -530,8 +544,11 @@ Get-ChildItem -Recurse -Filter *.php | Where-Object { $_.FullName -notmatch '\\v
 
 Test mencakup skema/migrasi, Fitur D (QRIS unik + garansi), Fitur E (captive
 portal + voucher), Fitur F (webhook simulator: build, signature, masking,
-middleware, rate limit, HTTP/CLI), kalkulasi kalender, QR util, crypto, dan
-rekonsiliasi akun QRIS persisten.
+middleware, rate limit, HTTP/CLI), endpoint cron HTTP (token valid/invalid),
+kalkulasi kalender, QR util, crypto,
+rekonsiliasi akun QRIS persisten, timezone WIB, penyimpanan settings dari form
+admin (termasuk normalisasi nama field bertitik), dan hapus router beserta
+guard referensinya.
 
 ## Struktur Proyek
 
@@ -581,6 +598,8 @@ var/                 DB lokal, backup, PID server dev
 | Cron 401/503 | `CRON_TOKEN` kosong/salah, `CRON_HMAC_ENABLED` tidak sesuai, atau `CRON_ENABLED=false`. |
 | Voucher tidak masuk MikroTik | Cek `retry_queue`, log worker, kredensial router, dan `MIKROTIK_FAKE`. |
 | Captive portal 403 | `FEATURE_WIFI_CAPTIVE_PORTAL` mati atau SSID tidak ada di `WIFI_ALLOWED_SSIDS`. |
+| Hapus router ditolak | Router masih dipakai pelanggan/voucher/sesi captive; pindahkan data terkait dulu. Pesan lengkap tampil di flash error. |
+| Toggle pengaturan tidak berubah | Pastikan tabel `settings` dapat ditulis, lalu simpan ulang dari **Admin → Pengaturan**; key disimpan dalam format bertitik. |
 | Simulator 403 | `FEATURE_WEBHOOK_SIMULATOR=false`, atau production tanpa `WEBHOOK_SIMULATOR_ALLOW_IN_PRODUCTION=true`. |
 | Simulator 422/401 | Signature mode `sign` tidak cocok, target/ID salah, atau gateway belum dikonfigurasi; cek riwayat run. |
 | Container app gagal boot | `AUTO_MIGRATE=1` dan migrasi gagal; lihat `docker compose logs billas-app`. |

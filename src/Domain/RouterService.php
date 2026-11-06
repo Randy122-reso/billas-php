@@ -102,6 +102,42 @@ final class RouterService
         return true;
     }
 
+    /**
+     * Delete a router only when nothing still references it. Referenced routers
+     * must be detached from customers/vouchers/sessions first so the admin UI
+     * never creates orphaned records.
+     */
+    public function delete(int $id): void
+    {
+        $router = $this->find($id);
+        if ($router === null) {
+            throw new InvalidArgumentException('Router tidak ditemukan.');
+        }
+
+        $references = [
+            'pelanggan' => 'customers',
+            'voucher' => 'vouchers',
+            'sesi captive' => 'captive_portal_sessions',
+        ];
+        $conflicts = [];
+        foreach ($references as $label => $table) {
+            $stmt = $this->db->prepare("SELECT COUNT(*) FROM {$table} WHERE router_id = ?");
+            $stmt->execute([$id]);
+            $count = (int) $stmt->fetchColumn();
+            if ($count > 0) {
+                $conflicts[] = $count . ' ' . $label;
+            }
+        }
+
+        if ($conflicts !== []) {
+            throw new \RuntimeException(
+                'Router masih dipakai oleh ' . implode(', ', $conflicts) . '. Pindahkan atau hapus data terkait terlebih dahulu.'
+            );
+        }
+
+        $this->db->prepare('DELETE FROM routers WHERE id = ?')->execute([$id]);
+    }
+
     /** @return array{host:string,port:int,username:string,password:string,use_tls:bool} */
     public function connection(int $routerId): array
     {

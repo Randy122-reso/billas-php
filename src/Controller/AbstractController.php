@@ -64,6 +64,27 @@ abstract class AbstractController
         return is_numeric($value) ? (int) $value : $default;
     }
 
+    /**
+     * Read a runtime-setting field.
+     *
+     * HTML form field names containing dots (e.g. features.wifi_captive_portal)
+     * are normalised by PHP to underscores before they reach the parsed body,
+     * so both spellings must be accepted.
+     */
+    protected function postSetting(ServerRequestInterface $request, string $key, string $default = ''): string
+    {
+        $input = $this->input($request);
+        foreach ([$key, str_replace('.', '_', $key)] as $candidate) {
+            if (array_key_exists($candidate, $input)) {
+                $value = $input[$candidate];
+
+                return is_scalar($value) ? trim((string) $value) : $default;
+            }
+        }
+
+        return $default;
+    }
+
     protected function queryString(ServerRequestInterface $request, string $key, string $default = ''): string
     {
         $value = $request->getQueryParams()[$key] ?? $default;

@@ -43,6 +43,10 @@
                                 <?= csrf_field() ?>
                                 <button class="btn btn-ghost btn-sm" type="submit"><?= (int) $router['active'] === 1 ? 'Nonaktifkan' : 'Aktifkan' ?></button>
                             </form>
+                            <form method="post" action="<?= e(billas_url('/admin/routers/delete/' . (int) $router['id'])) ?>" class="inline-form">
+                                <?= csrf_field() ?>
+                                <button class="btn btn-danger btn-sm" type="submit" onclick="return confirm('Hapus router ini? Tindakan ini tidak dapat dibatalkan.')">Hapus</button>
+                            </form>
                         </td>
                     </tr>
                 <?php endforeach; ?>

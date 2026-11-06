@@ -84,7 +84,7 @@ final class Env
         return [
             'APP_ENV' => 'production',
             'APP_DEBUG' => 'false',
-            'APP_VERSION' => '4.0.0',
+            'APP_VERSION' => '4.2.0',
             'APP_URL' => 'http://localhost:8080',
             'ALLOW_HTTP_IN_PRODUCTION' => 'false',
             'BASE_URL' => '',

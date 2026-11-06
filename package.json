@@ -1,0 +1,24 @@
+{
+  "name": "billas-php",
+  "version": "4.2.0",
+  "private": true,
+  "description": "Billas v4.2 - hotspot voucher, PPPoE billing, QRIS unique guarantee, RTRWNET WiFi captive portal, and admin-only webhook simulator in pure PHP 8.3.",
+  "license": "UNLICENSED",
+  "engines": {
+    "php": ">=8.3",
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "php vendor/bin/phpunit",
+    "test:unit": "php vendor/bin/phpunit --testsuite Unit",
+    "test:integration": "php vendor/bin/phpunit --testsuite Integration",
+    "migrate": "php bin/console migrate",
+    "migrate:seed": "php bin/console migrate --seed",
+    "seed": "php bin/console seed",
+    "status": "php bin/console status",
+    "cron": "php bin/console cron:run --force",
+    "worker": "php bin/worker.php",
+    "worker:health": "php bin/worker.php --health",
+    "serve": "php -S 127.0.0.1:8080 -t public public/index.php"
+  }
+}

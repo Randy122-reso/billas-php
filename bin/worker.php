@@ -7,7 +7,7 @@ use Billas\Kernel;
 use Billas\Support\Time;
 
 /**
- * Billas v4 retry worker.
+ * Billas v4.2 retry worker.
  *
  * Drains retry_queue in a long-running loop. Designed for the billas-worker
  * container (PHP CLI, UID 1000) and exits cleanly on SIGTERM/SIGINT.

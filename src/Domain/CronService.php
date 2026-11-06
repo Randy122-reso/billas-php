@@ -56,7 +56,7 @@ final class CronService
 
         foreach ($tasks as $task) {
             $interval = $this->interval($task);
-            if (!$force && !$this->claim($task, $interval)) {
+            if (!$this->claim($task, $interval, $force)) {
                 $summary[$task] = [
                     'status' => 'skipped',
                     'reason' => 'interval',
@@ -112,7 +112,7 @@ final class CronService
      * Atomically reserve a task slot. SQLite BEGIN IMMEDIATE serializes writers,
      * which makes this safe across the app and worker containers.
      */
-    private function claim(string $task, int $interval): bool
+    private function claim(string $task, int $interval, bool $force = false): bool
     {
         $now = Time::now();
         $this->db->exec('BEGIN IMMEDIATE');
@@ -120,7 +120,7 @@ final class CronService
             $stmt = $this->db->prepare('SELECT last_run_at FROM job_state WHERE task = ?');
             $stmt->execute([$task]);
             $last = $stmt->fetchColumn();
-            if ($last !== false && $now - (int) $last < $interval) {
+            if (!$force && $last !== false && $now - (int) $last < $interval) {
                 $this->db->exec('COMMIT');
 
                 return false;
